@@ -1,0 +1,105 @@
+#############################
+# Render Len Document
+#############################
+
+---
+output: word_document
+title: "Another Pandoc Markdown Article Starter and Template"
+author:
+- name: Steven V. Miller
+  affiliation: Clemson University
+- name: A Second Author Who Did Less Work
+  affiliation: The Ohio State University
+- name: A Graduate Student
+  affiliation: University of Alabama
+abstract: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec sit amet libero justo. Pellentesque eget nibh ex. Aliquam tincidunt egestas lectus id ullamcorper. Proin tellus orci, posuere sed cursus at, bibendum ac odio. Nam consequat non ante eget aliquam. Nulla facilisis tincidunt elit. Nunc hendrerit pellentesque quam, eu imperdiet ipsum porttitor ut. Interdum et malesuada fames ac ante ipsum primis in faucibus. Suspendisse potenti. Duis vitae nibh mauris. Duis nec sem sit amet ante dictum mattis. Suspendisse diam velit, maximus eget commodo at, faucibus et nisi. Ut a pellentesque eros, sit amet suscipit eros. Nunc tincidunt quis risus suscipit vestibulum. Quisque eu fringilla massa."
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+geometry: margin=1in
+#fontfamily: libertineotf
+mainfont: cochineal
+sansfont: Linux Biolinum O
+fontsize: 11pt
+# spacing: double
+endnote: no
+# pandocparas: TRUE
+sansitup: TRUE
+header-includes:
+  - \usepackage{longtable}
+  - \LTcapwidth=.95\textwidth
+  - \linespread{1.05}
+  - \usepackage{hyperref}
+---
+
+```{r , include=FALSE}
+getwd()
+load("my_work_space.RData")
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+## A Subsection in the Introduction
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>. Here's an obligatory citation to @xie2013ddrk.
+
+# Literature Review
+
+# Research Design
+
+## Another Subsection From Kant, Who Writes as If He Does Not Want to Be Read
+
+## Another Subsection
+
+```{r, echo=F, fig.cap = "A Simple ggplot with the mtcars Data in R", message=F, fig.width=8}
+
+breaks_z=seq(0,20,5)
+summary(df2$pt)
+df2 %>% filter(units_prep <= total_pop_at_risk, age_group_label=="15-24", sex=="female") %>%
+  ggplot() +
+  geom_raster(aes(x=incidence_threshold*1000, y=efficacy, fill=infections_averted_pct))+ 
+  scale_fill_gradientn(name="% of all infections averted (15-49)",
+                       colours=c("darkblue","white","red"),breaks=seq(0,20,5)) +
+  stat_contour(aes(y=efficacy, x=incidence_threshold*1000, z=infections_averted_pct),  
+               color="black", linewidth=0.5, linetype=1, binwidth=2.5) +
+  geom_text_contour(aes(y=efficacy, x=incidence_threshold*1000, z=infections_averted_pct), breaks=seq(0,15,1), size=4, rotate=F) +
+  #facet_grid(age_group_label ~ sex) +
+  theme(legend.position="bottom") +
+  xlab("Incidence treshold (per 1000 py)")+ylab("Efficacy")+
+  scale_x_continuous(expand=c(0,0), breaks=inc_seq*1000, trans = "reverse") +
+  scale_y_continuous(expand=c(0,0), breaks=effic_seq) +
+  guides(fill = guide_legend(keywidth = 2, keyheight = 1, nrow=1)) +
+  theme(legend.position="bottom") +
+  theme(strip.background = element_rect(colour="black", fill="white"))
+
+
+```
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+# Results
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r}
+plot(mtcars)
+```
+
+# Conclusion
+
+\newpage
