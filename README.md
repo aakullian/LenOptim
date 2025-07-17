@@ -5,10 +5,10 @@
 
 This document provides descriptions for all major functions used in the LenOptim PrEP allocation pipeline. 
 
-**Primary R scripts**
+**Primary R scripts:**
 1. NAOMI_config_Allocate_PrEP_RSA.R - creates incidence_df (the incidence input file from NAOMI data)
-2. Allocate_PrEP_RSA_v2
-3. Run_Allocate_PrEP_RSA
+2. Allocate_PrEP_RSA_v2 - generates a PrEP allocation strategy using incidence_df and facility_df (facilty name, lat/lon, district, previous PrEP capacity, catchment populations by age and gender)
+3. Run_Allocate_PrEP_RSA - runs Allocate_PrEP_RSA
 
 ---
 
