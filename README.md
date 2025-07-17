@@ -3,7 +3,7 @@
 
 # 📚 LenOptim R Function Documentation
 
-This document provides markdown-formatted documentation for all major functions used in the LenOptim PrEP allocation pipeline. 
+This document provides descriptions for all major functions used in the LenOptim PrEP allocation pipeline. 
 
 ---
 
