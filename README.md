@@ -19,7 +19,7 @@ Runs the full PrEP allocation pipeline and returns formatted map outputs, summar
 - `district_sf`: District shapefile (sf object)
 - `budget_vec`: Vector of budgets to simulate
 - `cost_per_unit_vec`: Vector of unit costs to simulate
-- `coverage_mult_vec`: Vector of population coverage levels (e.g. 1, 0.8, etc.)
+- `coverage_mult_vec`: Vector of the proportion of a age/gender/risk/facility sub-population to allocate PrEP (e.g. 1, 0.8, etc.)
 - `selected_budget`: Budget to plot
 - `selected_cost`: Unit cost to plot
 - `selected_coverage_mult`: Coverage multiplier for selected scenario
@@ -29,8 +29,8 @@ Runs the full PrEP allocation pipeline and returns formatted map outputs, summar
 **Returns:**
 - `formatted_map`: Patchwork of 3 ggplots
 - `summary_table`: One-row summary of selected scenario
-- `facility_summary`: Stratified allocation table
-- `result_df`: Row-level allocation results
+- `facility_summary`: Stratified allocation table showing number of PrEP units allocated per facility by age and gendder
+- `result_df`: Row-level allocation results for one scenario
 
 ---
 
