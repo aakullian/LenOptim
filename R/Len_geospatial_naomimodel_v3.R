@@ -66,6 +66,8 @@ table(naomi_shp$area_id)
 table(naomi_shp$region)
 table(naomi_shp$country)
 table(naomi_shp$iso3)
+table(naomi_shp$a)
+
 
 #Set subset varibales and set paramters for new vars
 regions=c("ESA") #ESA, LAC, WCA
@@ -73,7 +75,7 @@ regions=c("ESA") #ESA, LAC, WCA
 iso3_group <- c("ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA")
 #iso3_group <- c("ZAF","MWI","ZWE")
 sex_groups = c("female","male","both") # "male","female","both"
-age_groups <- c("15-19","20-24","25-29","30-34","35-39","40-44","45-49","15-24","25-34","35-49","15-49") # "15-19","20-24","25-29","30-34","35-39","40-44","45-49"
+age_groups <- c("15-19","15-24","20-24","25-34","35-49","15-49","50+") # "15-19","20-24","25-29","30-34","35-39","40-44","45-49"
 #age_groups <- c("15-24","25-34","35-49","15-49") # "15-19","20-24","25-29","30-34","35-39","40-44","45-49"
 #age_groups <- c("15-49") # "15-19","20-24","25-29","30-34","35-39","40-44","45-49"
 
@@ -125,12 +127,12 @@ naomi_ssa_shp_m <- naomi_shp %>%
   select_at(vars(-ends_with(".y"),-c(indicator,lower,upper))) %>%
   dplyr::select(-age_group) %>%
   pivot_wider(names_from = c(indicator_label,age_group_label), values_from = c(mean)) %>%
-  mutate(`Population_20-29`=`Population_20-24`+`Population_25-29`,
-         `HIV prevalence_20-29`=(`Population_20-24`/(`Population_20-24`+`Population_25-29`))*`HIV prevalence_20-24`+
-                                (`Population_25-29`/(`Population_20-24`+`Population_25-29`))*`HIV prevalence_25-29`,
-         `HIV incidence_20-29`= ((`Population_20-24`*(1-`HIV prevalence_20-24`))/((`Population_20-24`*(1-`HIV prevalence_20-24`))+(`Population_25-29`*(1-`HIV prevalence_25-29`))))*`HIV incidence_20-24`+
-                                ((`Population_25-29`*(1-`HIV prevalence_25-29`))/((`Population_20-24`*(1-`HIV prevalence_20-24`))+(`Population_25-29`*(1-`HIV prevalence_25-29`))))*`HIV incidence_25-29`) %>%
-  pivot_longer(`Population_15-49`:`HIV incidence_20-29`, names_sep = "_", names_to = c("indicator_label","age_group_label"), values_to = "mean") %>%
+  # mutate(`Population_20-29`=`Population_20-24`+`Population_25-29`,
+  #        `HIV prevalence_20-29`=(`Population_20-24`/(`Population_20-24`+`Population_25-29`))*`HIV prevalence_20-24`+
+  #                               (`Population_25-29`/(`Population_20-24`+`Population_25-29`))*`HIV prevalence_25-29`,
+  #        `HIV incidence_20-29`= ((`Population_20-24`*(1-`HIV prevalence_20-24`))/((`Population_20-24`*(1-`HIV prevalence_20-24`))+(`Population_25-29`*(1-`HIV prevalence_25-29`))))*`HIV incidence_20-24`+
+  #                               ((`Population_25-29`*(1-`HIV prevalence_25-29`))/((`Population_20-24`*(1-`HIV prevalence_20-24`))+(`Population_25-29`*(1-`HIV prevalence_25-29`))))*`HIV incidence_25-29`) %>%
+  pivot_longer(`Population_15-49`:`HIV incidence_20-24`, names_sep = "_", names_to = c("indicator_label","age_group_label"), values_to = "mean") %>%
   pivot_wider(names_from = c(indicator_label), values_from = c(mean)) %>%
   mutate(incidence=`HIV incidence`,prevalence=`HIV prevalence`,
        pop_at_risk = Population*(1-prevalence),
@@ -406,7 +408,7 @@ naomi_ssa_shp_m_df <- data_frame(naomi_ssa_shp_m)
 head(naomi_ssa_shp_m_df)
 
 inc_list <- naomi_ssa_shp_m_df %>%
-  filter(iso3=="ZAF",age_group_label=="20-29", sex=="female") %>%
+  filter(age_group_label=="15-24", sex=="female") %>%
   dplyr::select(area_id,iso3,incidence, pop_at_risk)%>%
   arrange(incidence)
 
@@ -463,9 +465,11 @@ table(risk_dist_targeting$quant_target)
 naomi_ssa_shp_m_df <- data_frame(naomi_ssa_shp_m)
 head(naomi_ssa_shp_m_df)
 inc_list <- naomi_ssa_shp_m_df %>%
-  filter(iso3=="ZAF",age_group_label %in% c("15-24","25-34","35-49","20-29") & sex!="both" | (age_group_label=="15-49" & sex=="both")) %>%
+  filter(iso3=="MOZ",age_group_label %in% c("15-19","20-24","15-24","25-34","35-49","50+") & sex!="both" | (age_group_label=="15-49" & sex=="both")) %>%
   dplyr::select(area_id,iso3,incidence, pop_at_risk, age_group_label, sex)%>%
   arrange(incidence)
+
+efficacy=0.95
 
 n=1
 for (i in seq(1,nrow(inc_list),)){
@@ -522,26 +526,54 @@ for (i in seq(1,nrow(inc_list),)){
 
 risk_dist_targeting_fine_scale = df2
 risk_dist_targeting_fine_scale$inc_mult = risk_dist_targeting_fine_scale$inc_in_sample/risk_dist_targeting_fine_scale$inc_district #column of the relative difference in incidence between the targeted pop and the general pop = risk_dist_targeting_fine_scale %>%
-  group_by(area_id) %>%
-  mutate(infections_district_1549_both=total_infections_district_age_sex[sex=="both" & quant_target==0.125],
-         infections_averted_pct= 1 - ((infections_district_1549_both-infections_averted)/infections_district_1549_both)) 
-
 summary(risk_dist_targeting_fine_scale$inc_mult)
 names(risk_dist_targeting_fine_scale)
 
+naomi_ssa_shp_m_MOZ <- naomi_ssa_shp_m %>%
+  filter(iso3=="MOZ") 
+
+save(risk_dist_targeting_fine_scale, naomi_ssa_shp_m_MOZ, file = "Len_optim_data_MOZ.RData")
+
 ## cost effectiveness by different costs associated with targeting
 
-
-
 ## Cost effectiveness and impact by targeting geographically / demographically under different risk heterogeneity assumptions
-
-
 
 ## Save select dataframes ##
 rm(naomi_indicators_adm0, naomi_indicators, df1, df2, africa_adm0, bbox_polygon, naomi_shp)
 
 ## Save R data file ##
-save.image(file = "")
+save.image(file = "Len_optim_data_FULL_COUNTRY_LIST.RData")
 
+
+
+
+  
+
+
+# naomi_ssa_shp_m_ZAF_selection <- naomi_ssa_shp_m  %>%  
+#   filter(sex=="female", age_group_label %in% c("15-19", "20-24", "25-34","35-49"),  iso3=="ZAF")  %>%
+#   pivot_wider(names_from = c(sex,age_group_label), values_from = c(Population:incidence_reduction)) 
+# 
+# risk_dist_targeting_fine_scale_p25 = risk_dist_targeting_fine_scale %>%
+#   arrange(inc_in_sample) %>%
+#   mutate(quantile_target_factor = paste(quant_target-0.125, "-",quant_target+0.125),
+#          inc_mult_group = cut(inc_mult, c(0,0.25,0.75,1.25,1.75,2.25,Inf), right=F))  %>%
+#   filter(sex!="both",age_group_label %in% c("15-19", "20-24", "25-34","35-49"),iso3%in%iso3_selection, is.na(inc_mult_group)==F, quant_target %in% c(0.125,0.375,0.625,0.875)) %>%
+# 
+# 
+# districts_facility = data.frame(District=facility_district_totals$District)
+# districts_naomi= as.data.frame(naomi_ssa_shp_m) %>%
+#   filter(iso3=="ZAF",sex=="both",age_group_label=="15-49") %>%
+#   select(area_name, area_id)
+# write.csv(districts_naomi, "districts_naomi.csv")
+# 
+# test = stringdist_join(districts_facility, districts_naomi, by='District',mode='left', method="jw",max_dist=99,distance_col = "dist") 
+# 
+# district_matches <- test %>%
+#   group_by(District.y) %>%
+#   slice_min(order_by = dist, n = 1) %>% 
+#   ungroup() # Ungroup the data frame after the operation
+# 
+# write.csv(district_matches, "district_matches.csv")
 
 

@@ -372,6 +372,9 @@ hist(x)
 # Sample from the incidence by district map according to segment of the risk population.  
 # This will give a range of incidence rates, price thresholds, NNT by district, Which
 # can then be ordered and plotted to see cumulative infections averted for each country
+
+## Tertile risk distribution sampling ##
+
 naomi_ssa_shp_m_df <- data_frame(naomi_ssa_shp_m)
 head(naomi_ssa_shp_m_df)
 
@@ -428,7 +431,7 @@ risk_dist_targeting = df2
 names(risk_dist_targeting)
 table(risk_dist_targeting$quant_target)
 
-#more fine scale targeting
+## Quartile risk distribution sampling with age/gender ##
 
 naomi_ssa_shp_m_df <- data_frame(naomi_ssa_shp_m)
 head(naomi_ssa_shp_m_df)
