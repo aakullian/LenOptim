@@ -1,0 +1,893 @@
+---
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+<!-- Adam Akullian -->
+<!-- Render Len Optimization Paper -->
+<!-- 4/25/2025 -->
+
+---
+output: word_document
+fig_caption: yes
+title: "HIV risk prioritization in a declining epidemic, implications for the delivery of long-acting PrEP"
+author:
+- name: Adam Akullian,  Monisha Sharma, Jeff Imai-Eaton, Michelle O'brien, Geoff Garnett
+  affiliation: Gates Foundation, University of Washington, Harvard University
+abstract: 
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+geometry: margin=0.25in
+fontfamily: libertineotf
+mainfont: cochineal
+sansfont: Linux Biolinum O
+always_allow_html: yes 
+fontsize: 9pt
+endnote: no
+pandocparas: TRUE
+sansitup: TRUE
+header-includes:
+  - \usepackage{longtable}
+  - \LTcapwidth=.95\textwidth
+  - \linespread{1.05}
+  - \usepackage{hyperref}
+---
+
+```{r , include=FALSE}
+
+#sets the directory to where this script is stored#
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+
+#load("Len_optim_data.RData")
+load("Len_optim_data_FULL_COUNTRY_LIST.RData")
+#load("Len_optim_data_v31May2025.RData")
+
+library(raster)
+library(ggplot2)
+library(dplyr)
+library(sf)
+library(tidyverse)
+library(classInt)
+library(metR)
+library(ggrepel)
+library(viridis) 
+library(ggpubr)
+library(ggpattern)
+library(kableExtra)
+library(webshot2)
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Young women face among the highest risk of HIV acquisition in eastern and southern Africa, with dramatic geographic and demographic heterogeneity. Over the last decade, incidence in young women (15-24) has declined substantially, by 50-80% in some high burden settings, driven by the scale-up of biomedical interventions (including ART, VMMC) and changes in sexual risk behaviors that protect young women from HIV acquisition [cite cite cite].  As the epidemic declines, more targeted prevention strategies will be needed to prioritize incidence reduction among groups with persistently elevated risk. Ongoing transmission may concentrate in new demographic groups and geographic settings, necessitating novel ways to measure and reach target risk groups, key populations, and marginalized or hard-to-reach groups [@akullian2021; @garnett2023], 
+
+Long-acting PrEP agents (6-monthly injectable Lenacapavir, 2-monthly injectable Cabotegravir) have demonstrated high efficacy, 100% and 89%, respectively, in young, sexually active African women at high risk of HIV acquisition.  The investigational monthly oral PrEP MK8527 is currently in phase 3 trials may add another highly effective long-acting alternative to the prevention landscape. These formulations of PrEP overcome adherence challenges, a large barrier to realizing the full population-level benefits of existing prevention tools in young African women. In the phase 3 trial of Lenacapavir in young African women, low efficacy in the oral PrEP arm was attributed to low adherence, corroborating observations from other clinical trials [cite cite cite]. Still, even with the adherence advantages of long-active PrEP over daily oral PrEP, its population-level impact will be determined by the extent to which it can reach high enough coverage in populations with elevated HIV risk.
+
+With a constrained budget and high costs associated with both provision and delivery of LA-PrEP, risk prioritization will be essential to balance the trade-off between efficiency and impact. Even under under generic licensing, LA-PrEP may only be cost-effective when targeted to the highest risk groups. According to modelling  by Wu et al, Lenacapavir was only cost effective at a price threshold of $200 per person per year in South Africa when restricted to female sex workers, their clients, and women with >1 sexual partner in the past year.  (Wu, 2024). Under these conditions, the overall impact of LA-PrEP was limited (12% infections averted over 10 years) because most new infections (~88%) occur in lower-to-moderate risk groups who comprise a much larger proportion of the population (>97% in this model). Risk tends to be heavily skewed in a population, where the highest risk groups (female sex workers, individuals with multiple partners, individuals with partners of unknown status, and individuals residing in areas with high prevalence of HIV viremia), are often small in size relative to lower-to-moderate risk groups who make up a larger share of the population and therefore a larger share of the infections [3] (Bersheyn - sex worker modeling, Roberts, 2022).  Restricting Lenacapavir to the highest-risk groups, while cost effective according to most models, will fail to prevent a substantial fraction of new infections that occur in lower-to-moderate incidence settings. 
+
+Several risk prediction models have been developed and validated as a tool to identify those at highest risk based on demographic, behavioral, and geographic co-variates. These models, however, have demonstrated low-to-moderate performance and often fail to identify large numbers of individuals who go on to acquire HIV (Balkus, Eaton etal]. As a result, their utility in prioritizing PrEP to high-risk groups may be limited. Furthermore, a risk prioritization approach may add additional costs and complexity associated with product delivery, including the additional effort needed to reach the highest risk populations. Risk screening tools may also stigmatize populations identified as "high-risk", leading to lower overall uptake. As a result, the use of risk-screening tools must weigh the benefits of focused prevention against the limitations and additional costs associated with their use.  
+
+More simpler modes of PrEP delivery, such as universal PrEP offer in high-incidence settings, have been proposed as an alternative to risk-prioritization models [cite Roberts et al, ECHO, and SEARCH]. Universal offer of PrEP overcomes the limitations of risk-screening and allows the user to decide whether and when to take PrEP based on their own risk assessment.  Uptake and adherence to PrEP may, in fact, closely align with an individual's empirical risk, resulting in substantial incidence reduction in real-world settings [1, 2] [Roberts et al]. Models of prevention-effective PrEP delivery, where PrEP use covers periods of high-risk, even among lower-to-moderate risk groups, show a larger overall impact without suffering from lower efficiency compared to models where PrEP is prioritized to the highest risk groups. 
+
+Models are  needed to evaluate the impact and efficiency of widening the offer of long-acting PrEP to a larger segment of the population, especially considering the potential cost savings and simplification in the mode of delivery associated with making PrEP universally available. There are, furthermore,  several limitations to complex transmission models that may outweigh their utility in estimating long-term population level impact and cost-effectiveness of various prevention strategies. First, they require several hundred parameters – many of which rely on sparse or non-existent data, and are thus prone to high levels of uncertainty, especially in risk heterogeneity in a population – one of the most important determinants of both impact and efficiency of prevention. Second, models project over long periods of time, sometimes decades, and by their nature have no ability to capture the effects of changes in political landscapes, funding environments, or global shocks like pandemics, war, and natural disasters.  As a result, their utility in estimating long-term impact and cost effectiveness is poor. As a result of their complexity, mathematical models are often limited to estimation at the country-level. Thus, while they are able to capture complex intra- and inter-host transmission dynamics over long time-horizons, their results may obscure heterogeneity at the small-area level [cite cite cite].  Decisions around allocation of resources are often made at district level and models are  needed to provide that scale of resolution.
+
+Here we develop a long-acting PrEP prioritization model based on a heuristic approach that includes a simple set of parameters to estimate cost-effectiveness and impact of various delivery prioritization scenarios.  Our results can inform epidemiological thresholds where LA-PrEP could be offered universally versus risk-prioritized to optimize the largest impact for the lowest cost.
+
+## Methods
+
+Simple mathematical formulas were used to estimate the direct impact and cost-efficiency of long-active PrEP. Equation inputs included baseline incidence (in the absense of PrEP), PrEP efficacy, duartion of protection, poplation coverage The following equations are used in this analysis:
+
+**1. Number needed to treat (NNT):**  
+\[
+NNT = \frac{1}{e \cdot I \cdot d}
+\]  
+Where:  
+- *e*: efficacy of the intervention  
+- *I*: HIV incidence in the absence of intervention  
+- *d*: duration of protection (in years)
+
+**2. Cost-effectiveness (cost per DALY averted):**  
+\[
+C_d = \frac{(NNT \cdot K - T)}{D}
+\]  
+Where:  
+- *K*: cost per unit of prevention  
+- *T*: lifetime treatment cost of HIV  
+- *D*: DALYs associated with HIV infection
+
+**3. Maximum price per dose (price threshold):**  
+\[
+K_{max} = \frac{T + D \cdot C_d}{NNT}
+\]
+
+**4. Annual infections averted (impact):**  
+\[
+A = I \cdot f \cdot e \cdot Pop \cdot (1 - P)
+\]  
+Where:  
+- *f*: coverage of target population  
+- *P*: HIV prevalence  
+- *Pop*: total population
+
+All calculations were stratified by age, sex, geography, and assumed different prioritization scenarios.
+## Results
+
+District-level incidence varied both within and between three priority countries - from <1/1000 in regions of Malawi and Zimbabwe to upwards of 10/1000 in South Africa (figure 1A).  Half of all new infections across the three countries occured within <25% of districts, with similar geographic heterogeneity when stratified by age and sex. 
+
+```{r, echo=F, results='hide',message=FALSE, warning=FALSE, fig.cap = "Figure 1. A. Women. B. Men", message=F, fig.width=15, fig.height=8}
+
+plot_age_dist_female <- naomi_ssa_shp_m %>% 
+  #filter(sex=="female", age_group_label %in%  c("15-24", "25-34", "35-49"), iso3=="ZAF") %>%
+  filter(sex=="female", age_group_label %in%  c("15-19", "20-24", "25-34","35-49"),  iso3=="ZAF") %>%
+  group_by(area_id, sex) %>%
+  mutate(inc_rel_1519=incidence/incidence[age_group_label=="15-19"]) %>%
+  ggplot(aes(x = age_group_label, y = inc_rel_1519,color=country)) +
+  geom_point(size=2,alpha=0.5) +
+  geom_line(aes(group=area_id), stat = "smooth", method = loess, span=0.6, size = 1,alpha=0.05) +
+  geom_line(aes(group=1), stat = "smooth", method = loess, span=0.6, size = 2,color="black",linetype=2) +
+  labs(x = "Age", y = "Incidence relative to 15-24") +
+  scale_y_continuous(limits=c(0.25,1.75))+
+  #facet_wrap(~country, nrow=2) +
+  #scale_color_viridis(discrete = TRUE, option = "D")+
+  theme_bw(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        strip.background = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())  
+
+plot_age_dist_male <- naomi_ssa_shp_m %>% 
+  #filter(sex=="male", age_group_label %in%  c("15-24", "25-34", "35-49"), iso3=="ZAF") %>%
+  filter(sex=="male", age_group_label %in%  c("15-19", "20-24", "25-34","35-49"),  iso3=="ZAF") %>%
+  group_by(area_id, sex) %>%
+  mutate(inc_rel_1519=incidence/incidence[age_group_label=="15-19"]) %>%
+  ggplot(aes(x = age_group_label, y = inc_rel_1519,color=country)) +
+  geom_point(size=2,alpha=0.5) +
+  geom_line(aes(group=area_id), stat = "smooth", method = loess, span=0.6, size = 1,alpha=0.05) +
+  geom_line(aes(group=1), stat = "smooth", method = loess, span=0.6, size = 2,color="black",linetype=2) +
+  labs(x = "Age", y = "") +
+  #scale_y_continuous(limits=c(0,3))+
+  #facet_wrap(~country, nrow=2) +
+  #scale_color_viridis(discrete = TRUE, option = "D")+
+  theme_bw(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        strip.background = element_blank(), 
+        legend.position = "side",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())  
+
+# ggarrange(plot_age_dist_female,plot_age_dist_male,
+#                     nrow = 1,
+#                     labels = c("A", "B"),
+#                     common.legend = T)
+```
+
+```{r, echo=F, results='hide',message=FALSE, warning=FALSE, fig.cap = "Figure 1. A. Incidence rate among adults 15-24 by district. Districts with price thresholds > $130/pp/yr highlihght in red. B. Cumulative percent of all new infections occuring within a given percent of districts by incidence (arranged from high to low). 50% of all incident infections occur in 25% of the districts with the highest incidence", message=F, fig.width=15, fig.height=8}
+
+#Incidence map
+age_group_selection = "15-24"
+sex_selection="female"
+#iso3_selection="ZAF"
+iso3_selection <- c("ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA")
+
+africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+
+plot_map_inc_1549 <- naomi_ssa_shp_m %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection, iso3%in%iso3_selection) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  geom_sf(aes(fill=inc_cat),show.legend=T) +
+  geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Incidence (per 1000py)") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 16) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.3,0.8),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank()) 
+
+plot_map_inc_pt200_1524F <- naomi_ssa_shp_m %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill="grey90", linewidth=0.8) +
+  geom_sf(aes(fill=inc_cat),show.legend=T) +
+  geom_sf(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection & sex==sex_selection & pt>130),
+    fill=NA, color="red",lwd=0.5,show.legend=F) +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Incidence (per 1000py)") +
+  geom_text(x=3, y=30, label="Scatter plot") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 16) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.30,0.80),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank()) 
+
+
+#% of population by incidence threshold
+plot_popatrisk_infections_rank_1549_both <-
+  as.data.frame(naomi_ssa_shp_m) %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection, iso3%in%iso3_selection) %>%
+  group_by(sex) %>%
+  arrange(-incidence) %>%
+  mutate(
+    rank = row_number(),
+    quantile = rank/max(rank),
+    cum_pop_at_risk_p = cumsum(pop_at_risk)/sum(pop_at_risk),
+    cum_inf_averted_p = cumsum(infections_averted)/sum(infections_averted),
+    rank_type="15_49") %>%
+  arrange(sex, rank) %>%
+  dplyr::select(incidence, rank, quantile,cum_pop_at_risk_p, cum_inf_averted_p, sex, age_group_label, rank_type)
+
+#% of population by incidence threshold
+table(naomi_ssa_shp_m$age_group_label)
+plot_popatrisk_infections_rank_1549F <-
+  as.data.frame(naomi_ssa_shp_m) %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection, iso3%in%iso3_selection) %>%
+  group_by(sex,age_group_label) %>%
+  arrange(-incidence) %>%
+  mutate(
+    rank = row_number(),
+    quantile = rank/max(rank),
+    cum_pop_at_risk_p = cumsum(pop_at_risk)/sum(pop_at_risk),
+    cum_inf_averted_p = cumsum(infections_averted)/sum(infections_averted)) %>%
+  arrange(sex, rank) %>%
+  dplyr::select(incidence, rank, quantile,cum_pop_at_risk_p, cum_inf_averted_p, sex, age_group_label) %>%
+  #pivot_longer(cols = cum_pop_at_risk_p:cum_inf_averted_p, names_to = "metric",values_to = "pct") %>%
+  ggplot() + 
+  geom_line(aes(x = cum_pop_at_risk_p, y = cum_inf_averted_p, color=age_group_label, linetype=sex),size=1) +
+  scale_linetype_manual(values=c(1,2)) +
+  geom_abline()+
+  labs(x = "Districts (%)", y = "New infections (%)") +
+  #facet_grid(~sex) +
+  theme_bw(base_size = 16) +
+  theme(strip.background = element_blank(), 
+        legend.position = "none",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+
+
+ggarrange(plot_map_inc_pt200_1524F, plot_popatrisk_infections_rank_1549F,
+                    nrow = 1,
+                    labels = c("A", "B","C"),
+                    common.legend = F)
+```
+
+```{r, fig.align="center", echo=F, results='hide',message=FALSE, warning=FALSE, fig.cap = "Figure 2. A. Incidence rate (per 1000 py), B. Number needed to treat (person-years of PrEP to avert one infection), C. Maximum number of infections averted (over one year), and D. Price treshold (at $500 per DALY averted) among women 15-24 years of age by district.", message=T, fig.width=40, fig.height=20}
+
+age_group_selection = "15-24"
+sex_selection="female"
+iso3_selection <- c("ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA")
+#iso3_selection="ZAF"
+
+africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+
+plot_map_inc_F1524 <- naomi_ssa_shp_m %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection, iso3%in%iso3_selection) %>%
+  ggplot() + 
+  geom_sf(aes(fill=inc_cat),show.legend=T) +
+  geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Incidence (per 1,000 py)") +
+  theme_void(base_size = 35) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.25,0.9),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank()) 
+
+plot_map_nnt_F1524 <- naomi_ssa_shp_m %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection, iso3%in%iso3_selection) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  geom_sf(aes(fill=cd_cat),show.legend=T) +
+  geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Cost per DALY averted") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 35) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.25,0.9),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank()) 
+
+plot_map_pt_F1524 <- naomi_ssa_shp_m %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection, iso3%in%iso3_selection) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  geom_sf(aes(fill=pt_cat),show.legend=T) +
+  geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  #facet_grid(sex~age_group_label) +
+  labs(fill="Price treshold ($/yr)") +
+  #guides(fill = guide_legend(title.position = "top", title.hjust=0.5,nrow=1)) +
+  theme_void(base_size = 35) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.25,0.9),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank()) 
+
+
+plot_map_infavert_F1524 <- naomi_ssa_shp_m %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection, iso3%in%iso3_selection) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  geom_sf(aes(fill=infections_averted_cat),show.legend=T) +
+  geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Max infections averted") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 35) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.25,0.9),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank()) 
+
+
+
+ggarrange(plot_map_nnt_F1524, plot_map_pt_F1524,
+                    nrow = 1,
+                    #labels = c("A", "B","C","D"),
+                    common.legend = F)
+```
+
+
+```{r, echo=F, results='hide',message=FALSE, warning=FALSE,fig.cap = "Figure X. XXXX", message=F, fig.width=15, fig.height=10}
+
+age_group_selection = "15-24"
+sex_selection="female"
+iso3_selection="ZAF"
+
+africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+
+districts_targeted <- filter(risk_dist_targeting, pt>100)
+
+plot_map_inc_pt200_1524F_1 <- naomi_ssa_shp_m %>% 
+  filter(age_group_label==age_group_selection & sex==sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill="grey90", linewidth=0.8) +
+  geom_sf(aes(fill=inc_cat),show.legend=T) +
+  geom_sf(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection, sex==sex_selection, area_id %in% unique(districts_targeted$area_id)),
+    fill=NA, color="red",lwd=0.75,show.legend=F) +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Incidence (per 1000py)") +
+  geom_text(x=3, y=30, label="Scatter plot") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 16) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.30,0.80),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank())
+
+plot_map_inc_pt200_1524F_2 <- naomi_ssa_shp_m %>% 
+  filter(age_group_label==age_group_selection, sex==sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill="grey90", linewidth=0.8) +
+  geom_sf(aes(fill=inc_cat),show.legend=T) +
+  geom_sf(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection, sex==sex_selection, pt >100, iso3 %in% iso3_selection),
+    fill=NA, color="red",lwd=0.75,show.legend=F) +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Incidence (per 1000py)") +
+  geom_text(x=3, y=30, label="Scatter plot") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 16) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.30,0.80),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank())
+
+
+
+# plot_inf_averted_by_pt_3countries_target <- filter(risk_dist_targeting,quant_target %in% c("[ 0 - 0.25 ]","[ 0.25 - 0.5 ]","[ 0.5 - 0.75 ]","[ 0.75 - 1 ]")) %>% 
+#   inner_join(naomi_total_1549_by_country, by = join_by(iso3)) %>%
+#   arrange(iso3, -pt) %>%
+#   group_by(iso3, shape) %>%
+#   mutate(cum_pop = cumsum(population)/total_popatrisk_1549_bothsexes_country,
+#        impact_pop = cumsum(total_infected_in_sample)/total_inf_1549_bothsexes_country,
+#        label=ifelse(pt==max(pt),iso3,NA)) %>%
+#   ggplot(aes(x = pt, color=iso3, group=iso3, label=label)) + 
+#   geom_line(aes(y = impact_pop*100),size=1) +
+#    geom_line(aes(y = cum_pop*100),size=1,linetype=2) +
+#   # geom_line(data=as.data.frame(naomi_ssa_shp_m) %>%
+#   #             filter(age_group_label=="15-24", sex=="female") %>%
+#   #             group_by(sex,age_group_label) %>%
+#   #             arrange(sex,age_group_label,-pt) %>%
+#   #             mutate(impact_pop = cumsum(infections_averted)/total_infections_1549_11countries,
+#   #                    label=ifelse(pt==min(pt),"all countries", NA)),
+#   #           aes(x=pt, y=impact_pop*100), color="black",linetype=2) +
+#   #facet_grid(iso3~.) +
+#   geom_vline(xintercept=100, linetype=2) +
+#   scale_x_continuous(trans = "reverse", breaks=seq(0,700,50), limits=c(300,0)) +
+#   scale_y_continuous(breaks=seq(0,35,5), limits=c(0,35)) +
+#   labs(x = "Price threshold ($/person/yr)", y = "cumulative (%)") +
+#   #geom_text(vjust=-1) +
+#   theme_bw(base_size = 16) +
+#   theme(legend.position="none",legend.title=element_blank(),
+#         panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+#         strip.background = element_blank(),
+#         axis.line = element_line(colour = "black"),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         panel.background = element_blank()) 
+
+plot_inc_reduction_district_targeting <- risk_dist_targeting_fine_scale %>%
+  ggplot() +
+  geom_point(aes(x=inc_in_sample, y=quant_target, color=infections_averted))+
+  # scale_fill_gradientn(name="% of all infections averted (15-49)",
+  #                      colours=c("darkblue","white","red")) +
+  # stat_contour(aes(y=efficacy, x=incidence_threshold*1000, z=infections_averted_pct),
+  #              color="black", linewidth=0.5, linetype=1, binwidth=2.5) +
+  # geom_text_contour(aes(y=efficacy, x=incidence_threshold*1000, z=infections_averted_pct), breaks=seq(0,15,1), size=4, rotate=F) +
+  #facet_grid(age_group_label ~ sex) +
+  theme(legend.position="bottom") +
+  xlab("Incidence treshold (per 1000 py)")+ylab("Efficacy")+
+  #scale_x_continuous(expand=c(0,0), breaks=inc_seq*1000, trans = "reverse") +
+  #scale_y_continuous(expand=c(0,0), breaks=effic_seq) +
+  guides(fill = guide_legend(keywidth = 2, keyheight = 1, nrow=1)) +
+  theme(legend.position="bottom") +
+  theme(strip.background = element_rect(colour="black", fill="white"))
+
+# ggarrange(plot_map_inc_pt200_1524F_2,plot_map_inc_pt200_1524F_1,
+#                     nrow = 1,
+#                     labels = c("A", "B","C","D"),
+#                     common.legend = F)
+
+
+
+```
+
+```{r, echo=F, results='hide',message=FALSE, warning=FALSE,fig.cap = "Figure X. XXXX", message=F, fig.width=20, fig.height=10}
+
+age_group_selection = "15-24"
+sex_selection="female"
+age_group_selection = "15-24"
+iso3_selection <- c("ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA")
+
+districts_targeted <- filter(risk_dist_targeting,pt>130)
+
+plot_map_inc_pt100_1524F <- naomi_ssa_shp_m %>%
+  filter(age_group_label==age_group_selection & sex==sex_selection & iso3%in%iso3_selection) %>%
+  ggplot() +
+  #geom_sf(color = "black") +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill="grey90", linewidth=0.8) +
+  geom_sf(aes(fill=inc_cat),show.legend=T) +
+  geom_sf(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection & sex==sex_selection & area_id %in% unique(districts_targeted$area_id)),
+    fill=NA, color="red",lwd=0.75,show.legend=F) +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Incidence (per 1000py)") +
+  geom_text(x=3, y=30, label="Scatter plot") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 16) +
+  theme(strip.background = element_blank(),
+        legend.position=c(0.20,0.80),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.text.y = element_blank(),
+        strip.text.x = element_blank())
+
+plot_price_target <- as.data.frame(naomi_ssa_shp_m) %>%
+  group_by(sex,age_group_label,country) %>%
+  arrange(country,sex,age_group_label,-pt) %>%
+  inner_join(naomi_total_1549_by_country, by = join_by(iso3)) %>%
+  filter(age_group_label==age_group_selection & sex==sex_selection & iso3%in%iso3_selection) %>%
+  mutate(cum_pop = cumsum(pop_at_risk)/total_popatrisk_1549_bothsexes_country,
+       impact_pop = cumsum(infections_averted)/total_inf_1549_bothsexes_country,
+       label=ifelse(pt==min(pt),country,NA)) %>%
+  dplyr::select(iso3,area_id,cum_pop,impact_pop,pt,label) %>%
+  filter(age_group_label==age_group_selection & sex==sex_selection & iso3%in%iso3_selection) %>%
+  ggplot(aes(x = pt, y = impact_pop*100, color=iso3, group=iso3,label=label)) +
+  geom_line(size=1) +
+  #geom_line(aes(y = cum_pop*100),size=1,linetype=2) +
+  geom_vline(xintercept=100, linetype=2) +
+  scale_x_continuous(trans = "reverse", breaks=seq(0,700,50), limits=c(300,-25), expand=c(0,0)) +
+  scale_color_viridis(discrete=T, na.value = "grey90",drop=FALSE) +
+  #scale_y_continuous(breaks=seq(0,35,5), limits=c(0,35), expand=c(0,0)) +
+  labs(x = "Price threshold ($/person/yr)", y = "cumulative (%)") +
+  geom_text(vjust=-1) +
+  theme_bw(base_size = 32) +
+  theme(legend.position="none",legend.title=element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+
+
+# ggarrange(plot_map_inc_pt100_1524F,plot_price_target,
+#                     nrow = 1, align='h', 
+#                     labels = c("A", "B","C","D"),
+#                     common.legend = F)
+
+plot_price_target
+
+```
+
+```{r, echo=F, results='hide',message=FALSE, warning=FALSE, fig.cap = "Figure X. XXXX", message=F, fig.width=20, fig.height=10}
+
+names(x)
+
+# Histogram with density plot
+risk_hist <- ggplot(riskhist, aes(x = x,color = as.factor(shape),group=shape)) +
+  #geom_histogram(aes(y = ..density..), position = "identity",
+  #               colour="black", cex = 0.8) +
+  geom_density(alpha=0.25,adjust=2,linewidth=2)+
+  scale_color_viridis(discrete = TRUE, option = "D")+
+  scale_x_continuous(limits=c(0,40), breaks=seq(0,50,10), expand=c(0,0)) +
+  theme_bw(base_size = 24) +
+  labs(color='Shape parameter') + xlab("risk (per 1000 py)") +
+  theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank()) 
+
+cum_inf_by_risk_dist <- risk_dist %>%
+  pivot_longer(cols = total_infected_in_sample:pt, names_to = "metric",values_to = "value") %>%
+  filter(shape<100, inc_full_pop==10, metric %in% c("inf_averted_pct")) %>%
+  ggplot(aes(x=(1-quant_target)*100, y=value*100, group=shape ,color=factor(shape))) +
+  geom_point()+ 
+  #geom_line() +
+  #geom_line(stat = "smooth", method = gam, size = 1) +
+  geom_smooth(span=1,se=F,size=1.5)+
+  scale_color_viridis(discrete = TRUE, option = "D")+
+  theme(legend.position="bottom") +
+  #facet_grid(metric~shape,scales="free")+
+  #geom_point(data=StudyDataMaster, aes(x=pHIV*100, y=1-pART, color=Study)) +
+  xlab("cumulative % of population (high to low risk)")+  ylab("cumulative infections (%)")+
+  scale_x_continuous(expand=c(0,0)) +
+  #scale_y_continuous(limits=c(0,500)) +
+  theme_bw(base_size=24)+ 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),strip.background = element_blank(), 
+        legend.position = "bottom",panel.border = element_rect(color = "black", fill = NA, linewidth = 1), ) +
+  guides(color=guide_legend(nrow=1,byrow=TRUE, title="shape (risk heterogeneity)"))
+
+inc_facets <- c("1"="1/1000py","5"="5/1000py","10"="10/1000py")
+
+pt_by_risk_dist <- risk_dist %>%
+  pivot_longer(cols = total_infected_in_sample:pt, names_to = "metric",values_to = "value") %>%
+  filter(shape<100, inc_full_pop<15, metric %in% c("pt")) %>%
+  ggplot(aes(x=quant_target*100, y=value, group=shape ,color=factor(shape))) +
+  geom_point()+ 
+  #geom_line() +
+  #geom_line(stat = "smooth", method = gam, size = 1) +
+  geom_smooth(span=1,se=F)+
+  geom_hline(yintercept = 100, linetype=2) +
+  scale_color_viridis(discrete = TRUE, option = "D")+
+  theme(legend.position="bottom") +
+  facet_grid(metric~inc_full_pop,scales="free", labeller=as_labeller(inc_facets))+
+  #geom_point(data=StudyDataMaster, aes(x=pHIV*100, y=1-pART, color=Study)) +
+  xlab("Percentile of the risk distribution targeted")+  ylab("price threshold ($ per py)")+
+  scale_x_continuous(expand=c(0,0),trans="reverse") +
+  #coord_cartesian(ylim=c(25,500))+
+  scale_y_continuous(trans="log10",breaks=c(50,100,200,1000)) +
+  theme_bw(base_size=24)+ 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),strip.background = element_blank(), 
+        legend.position = "bottom",panel.border = element_rect(color = "black", fill = NA, linewidth = 1), ) +
+  guides(color=guide_legend(nrow=1,byrow=TRUE, title="shape (risk heterogeneity)"))
+
+ggarrange(risk_hist,cum_inf_by_risk_dist,
+                    nrow = 1,
+                    labels = c("A", "B","C"),
+                    common.legend = T)
+
+
+```
+
+
+```{r, echo=F, results='hide',message=FALSE, warning=FALSE,fig.cap = "Figure X. XXXX", message=F, fig.width=20, fig.height=10}
+
+# risk_dist_targeting_fine_scale %>%
+# inner_join(naomi_total_1549_by_country, by = join_by(iso3)) %>%
+# filter(age_group_label=="15-24",sex=="female") %>%
+# arrange(sex,age_group_label,infections_averted) %>%
+# ggplot(aes(x=reorder(area_id,-infections_averted) , y=infections_averted, fill=age_group_label)) +
+# geom_boxplot(position=position_dodge(1),outlier.shape=NA) +
+# facet_grid(age_group_label~sex) +
+# labs(x = "District", y = "Infections averted (count)") +
+# theme_bw(base_size = 18) +
+# theme(legend.position="none",legend.title=element_blank(),
+#       panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+#       strip.background = element_blank(),
+#       axis.text.x = element_text(angle = 90, vjust = 0.5), # Rotate x-axis labels
+#       axis.line = element_line(colour = "black"),
+#       panel.grid.major = element_blank(),
+#       panel.grid.minor = element_blank(),
+#       panel.background = element_blank())
+# 
+# risk_dist_targeting_fine_scale %>%
+# inner_join(naomi_total_1549_by_country, by = join_by(iso3)) %>%
+# filter(iso3=="ZAF",age_group_label=="15-24",sex=="female") %>%
+# arrange(sex,age_group_label,infections_averted) %>%
+# ggplot(aes(x=quant_target, y=cdaverted, color=area_id)) +
+# geom_line()+
+# #geom_boxplot(position=position_dodge(1),outlier.shape=NA) +
+# facet_grid(age_group_label~sex) +
+# geom_hline(yintercept=500, linetype =2)+
+# labs(x = "District", y = "cost per DALY averted") +
+# theme_bw(base_size = 18) +
+# coord_cartesian(ylim=c(-500, 10000)) +
+# theme(legend.position="none",legend.title=element_blank(),
+#       panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+#       strip.background = element_blank(),
+#       axis.text.x = element_text(angle = 90, vjust = 0.5), # Rotate x-axis labels
+#       axis.line = element_line(colour = "black"),
+#       panel.grid.major = element_blank(),
+#       panel.grid.minor = element_blank(),
+#       panel.background = element_blank())
+# 
+# 
+# risk_dist_targeting_fine_scale %>%
+#   filter(age_group_label==age_group_selection, sex==sex_selection, iso3%in%iso3_selection, quant_target%in%c(0.525,0.675,0.825)) %>%
+#   inner_join(naomi_total_1549_by_country, by = join_by(iso3)) %>%
+#   arrange(iso3,quant_target, -pt) %>%
+#   group_by(iso3, quant_target) %>%
+#   mutate(cum_pop = cumsum(pop_subsample)/total_popatrisk_1549_bothsexes_country,
+#        impact_pop = cumsum(total_infected_subsample)/total_inf_1549_bothsexes_country,
+#        label=ifelse(pt==max(pt),iso3,NA)) %>%
+#   dplyr::select(sex, age_group_label,iso3,area_id,cum_pop,impact_pop,pt,quant_target)  %>%
+#   ggplot(aes(x = pt, color=quant_target, group=interaction(iso3,quant_target))) + 
+#   geom_line(aes(y = impact_pop*100),size=1) +
+#   geom_line(aes(y = cum_pop*100),size=1,linetype=2) +
+#   geom_vline(xintercept=100, linetype=2) +
+#   scale_x_continuous(trans = "reverse", breaks=seq(0,700,50), limits=c(300,0)) +
+#   scale_y_continuous(breaks=seq(0,35,5), limits=c(0,35)) +
+#   labs(x = "Price threshold ($/person/yr)", y = "cumulative (%)") +
+#   facet_grid(~quant_target)+
+#   theme_bw(base_size = 24) +
+#   theme(legend.position="bottom",legend.title=element_blank(),
+#         panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+#         strip.background = element_blank(),
+#         axis.line = element_line(colour = "black"),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         panel.background = element_blank())
+
+boxplot1 <- risk_dist_targeting_fine_scale %>%
+  arrange(inc_in_sample) %>%
+  mutate(
+    quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+    inc_mult_group = cut(
+      inc_mult,
+      breaks = c(0, 0.5, 1, 2, Inf),
+      right = FALSE,
+      labels = c("≤0.5", "0.5–1", "1–2", ">2")
+    )
+  ) %>%
+  filter(
+    age_group_label == age_group_selection,
+    sex == sex_selection,
+    iso3 %in% iso3_selection,
+    !is.na(inc_mult_group),
+    quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+  ) %>%
+  ggplot(aes(x = inc_mult_group, y = pt, group = inc_mult_group, color = inc_mult_group)) +
+  geom_boxplot(position = position_dodge(1), outlier.shape = NA, size = 1) +
+  geom_hline(yintercept = 130, linetype = 2) +
+  labs(x = "Incidence relative to district average", y = "Price threshold") +
+  theme_bw(base_size = 22) +
+  guides(colour = guide_legend(nrow = 1)) +
+  theme(
+    legend.position = "none",
+    legend.title = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.background = element_blank(),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+boxplot2 = risk_dist_targeting_fine_scale %>%
+  arrange(inc_in_sample) %>%
+  mutate(
+    quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+    inc_mult_group = cut(
+      inc_mult,
+      breaks = c(0, 0.5, 1, 2, Inf),
+      right = FALSE,
+      labels = c("≤0.5", "0.5–1", "1–2", ">2")
+    )
+  ) %>%
+  filter(
+    age_group_label == age_group_selection,
+    sex == sex_selection,
+    iso3 %in% iso3_selection,
+    !is.na(inc_mult_group),
+    quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+  ) %>%
+  ggplot(aes(x = inc_mult_group, y=cdaverted,group=inc_mult_group,color=factor(inc_mult_group))) + 
+  geom_boxplot(position=position_dodge(1),outlier.shape=NA,size=1) +
+  geom_hline(yintercept=0, linetype=2) +
+  #scale_x_continuous(trans = "reverse", breaks=seq(0,700,50), limits=c(300,0)) +
+  scale_y_continuous(limits=c(-500,2000)) +
+  labs(x = "Incidence relative to district average", y = "Cost per DALY averted ($)") +
+  #facet_grid(~quant_target)+
+  theme_bw(base_size = 22) +
+  guides(colour = guide_legend(nrow = 1)) +
+  theme(legend.position="none",legend.title=element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+
+ggarrange(boxplot1,boxplot2,
+                    nrow = 1, align='h', 
+                    labels = c("A", "B","C","D"),
+                    common.legend = F)
+
+
+```
+
+```{r, echo=F, results='hide',message=FALSE, warning=FALSE}
+
+#Table of all districts in ZAF
+coverage=0.25
+
+# naomi_ssa_shp_m_df %>%
+#   filter(iso3=="ZAF",age_group_label%in%c("15-24","20-29","25-34","35-49"),sex!="both") %>%
+#   mutate(Population=round(Population,0), `HIV prevalence (%)`=round(`HIV prevalence`*100,1), `HIV incidence (per 1000 py)`=round(`HIV incidence`*1000,1),`Population at risk`=round(pop_at_risk,0),`Number needed to treat`=round(nnt,0),`Cost per DALY averted ($)`=round(cd,0),`Cost per infection averted ($)`=round(ci,0), `Price treshold ($)`=round(pt,0), `Infections averted (per year)`=round(infections_averted,0),`New infections`=round(`Population at risk`*(incidence),0),`Person-years Lenacapavir`=round(pop_at_risk*coverage,0), `Budget Impact ($/yr)`=`Person-years Lenacapavir`*130) %>%
+#   dplyr::select(-c(area_level_label, area_sort_order,geometry, area_level, iso3,country,calendar_quarter,region,
+#                    incidence, prevalence, inc_cat, nnt_cat, cd_cat,pt_cat,infections_averted_cat, incidence_reduction,
+#                    quarter_label, parent_area_id,nnt,cd,ci,pt,infections_averted,pop_at_risk,`HIV prevalence`,`HIV incidence`)) %>%
+#   kbl(caption = "South African Districts") %>%
+#   kable_classic(full_width = F, html_font = "Cambria")
+
+Table1 <- naomi_ssa_shp_m_df %>%
+  filter(iso3=="ZAF",age_group_label%in%c("15-24","20-29","25-34","35-49"),sex!="both") %>%
+  mutate(Population=round(Population,0), `HIV prevalence (%)`=round(`HIV prevalence`*100,1), `HIV incidence (per 1000 py)`=round(`HIV incidence`*1000,1),`Population at risk`=round(pop_at_risk,0),`Number needed to treat`=round(nnt,0),`Cost per DALY averted ($)`=round(cd,0),`Cost per infection averted ($)`=round(ci,0), `Price treshold ($)`=round(pt,0), `Infections averted (per year)`=round(infections_averted,0),`New infections`=round(`Population at risk`*(incidence),0),`Person-years Lenacapavir`=round(pop_at_risk*coverage,0), `Budget Impact ($/yr)`=`Person-years Lenacapavir`*130) %>%
+  dplyr::select(-c(area_level_label, area_sort_order,geometry, area_level, iso3,country,calendar_quarter,region,
+                   incidence, prevalence, inc_cat, nnt_cat, cd_cat,pt_cat,infections_averted_cat, incidence_reduction,
+                   quarter_label, parent_area_id,nnt,cd,ci,pt,infections_averted,pop_at_risk,`HIV prevalence`,`HIV incidence`)) %>%
+kbl(align = "c", caption = "Impact and cost-effectiveness of Lenacapavir delivered to South African districts by age and sex") %>%
+  kable_paper(full_width = F) %>%
+  column_spec(1, bold = T) %>%
+  collapse_rows(columns = 1:3, valign = "top") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+Table1_risk_prioritized <- naomi_ssa_shp_m_df %>%
+  filter(iso3=="ZAF",age_group_label%in%c("15-24","20-29","25-34","35-49"),sex!="both") %>%
+  mutate(Population=round(Population,0), `HIV prevalence (%)`=round(`HIV prevalence`*100,1), `HIV incidence (per 1000 py)`=round(`HIV incidence`*1000,1),`Population at risk`=round(pop_at_risk,0),`Number needed to treat`=round(nnt,0),`Cost per DALY averted ($)`=round(cd,0),`Cost per infection averted ($)`=round(ci,0), `Price treshold ($)`=round(pt,0), `Infections averted (per year)`=round(infections_averted,0),`New infections`=round(`Population at risk`*(incidence),0),`Person-years Lenacapavir`=round(pop_at_risk*coverage,0), `Budget Impact ($/yr)`=`Person-years Lenacapavir`*130) %>%
+  dplyr::select(-c(area_level_label, area_sort_order,geometry, area_level, iso3,country,calendar_quarter,region,
+                   incidence, prevalence, inc_cat, nnt_cat, cd_cat,pt_cat,infections_averted_cat, incidence_reduction,
+                   quarter_label, parent_area_id,nnt,cd,ci,pt,infections_averted,pop_at_risk,`HIV prevalence`,`HIV incidence`)) %>%
+kbl(align = "c", caption = "Impact and cost-effectiveness of Lenacapavir delivered to South African districts by age and sex") %>%
+  kable_paper(full_width = F) %>%
+  column_spec(1, bold = T) %>%
+  collapse_rows(columns = 1:3, valign = "top") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+
+#Table1
+#save_kable(Table1, "RSA_district_prioritization.pdf")
+
+```
+
+```{r, echo=F, results='hide',message=FALSE, warning=FALSE,fig.cap = "Figure X. XXXX", message=F, fig.width=30, fig.height=10}
+
+plot_map_unv_vs_target <- naomi_ssa_shp_m %>% 
+  filter(iso3=="ZAF",age_group_label%in%c("15-24","25-34","35-49"),sex!="both") %>%
+  mutate(target=ifelse(cd<500,"Universal","Targeted")) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill="grey90", linewidth=0.8) +
+  geom_sf(aes(fill=factor(target)),show.legend=T, color="black") +
+  # geom_sf_pattern(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection, sex==sex_selection, iso3==iso3_selection, pt>100),
+  #       alpha=0,
+  #       pattern_colour="pink",
+  #       pattern_size=0.5,
+  #       pattern_spacing=0.03,
+  #       pattern = "crosshatch", # Choose a pattern
+  #       pattern_density = 0.001, # Adjust density
+  #       pattern_angle = 45 # Adjust angle
+  #     ) +
+  # geom_sf(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection, sex==sex_selection, iso3==iso3_selection, pt>130),
+  #   fill=NA, color="red",lwd=0.75,show.legend=F) +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  #scale_fill_manual(values=c("pink","turquoise")) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Delivery strategy") +
+  geom_text(x=3, y=30, label="Scatter plot") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 24) +
+  theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 1))
+
+
+summary(risk_dist_targeting_fine_scale$cdaverted)
+plot_map_unv_vs_target_percentile_risk <- naomi_ssa_shp_m %>% 
+  filter(iso3=="ZAF",age_group_label%in%c("15-24","25-34","35-49"),sex!="both") %>%
+  dplyr::select(area_id,geometry) %>%
+  right_join(risk_dist_targeting_fine_scale, by = join_by(area_id)) %>%
+  filter(quant_target>0.82,quant_target<0.86,age_group_label%in%c("15-24","25-34","35-49"),sex!="both") %>%
+  mutate(target=ifelse(cdaverted<500,"Universal","Targeted")) %>%
+  ggplot() + 
+  #geom_sf(color = "black") +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill="grey90", linewidth=0.8) +
+  geom_sf(aes(fill=factor(target)),show.legend=T, color="black") +
+  # geom_sf_pattern(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection, sex==sex_selection, iso3==iso3_selection, pt>100),
+  #       alpha=0,
+  #       pattern_colour="pink",
+  #       pattern_size=0.5,
+  #       pattern_spacing=0.03,
+  #       pattern = "crosshatch", # Choose a pattern
+  #       pattern_density = 0.001, # Adjust density
+  #       pattern_angle = 45 # Adjust angle
+  #     ) +
+  # geom_sf(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection, sex==sex_selection, iso3==iso3_selection, pt>130),
+  #   fill=NA, color="red",lwd=0.75,show.legend=F) +
+  #geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  #viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+  facet_grid(sex~age_group_label, switch="y") +
+  labs(fill="Delivery strategy") +
+  geom_text(x=3, y=30, label="Scatter plot") +
+  #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+  theme_void(base_size = 24) +
+  theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 1))
+
+# summary(risk_dist_targeting_fine_scale$cdaverted)
+# plot_map_unv_vs_target_min_percentile <- naomi_ssa_shp_m %>% 
+#   filter(iso3=="ZAF",age_group_label%in%c("15-24","20-29","25-34","35-49"),sex!="both") %>%
+#   dplyr::select(area_id,geometry) %>%
+#   right_join(risk_dist_targeting_fine_scale, by = join_by(area_id)) %>%
+#   filter(quant_target>0.82,quant_target<0.86) %>%
+#   mutate(target=ifelse(cdaverted<500,"Universal","Targeted")) %>%
+#   ggplot() + 
+#   #geom_sf(color = "black") +
+#   #geom_sf(data=africa_adm0_cropped_subs, color="black", fill="grey90", linewidth=0.8) +
+#   geom_sf(aes(fill=factor(target)),show.legend=T, color="black") +
+#   # geom_sf_pattern(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection, sex==sex_selection, iso3==iso3_selection, pt>100),
+#   #       alpha=0,
+#   #       pattern_colour="pink",
+#   #       pattern_size=0.5,
+#   #       pattern_spacing=0.03,
+#   #       pattern = "crosshatch", # Choose a pattern
+#   #       pattern_density = 0.001, # Adjust density
+#   #       pattern_angle = 45 # Adjust angle
+#   #     ) +
+#   # geom_sf(data=naomi_ssa_shp_m %>%  filter(age_group_label==age_group_selection, sex==sex_selection, iso3==iso3_selection, pt>130),
+#   #   fill=NA, color="red",lwd=0.75,show.legend=F) +
+#   #geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+#   #viridis::scale_fill_viridis(option="G", discrete=T, na.value = "grey90",drop=FALSE, direction=-1) +
+#   facet_grid(sex~age_group_label, switch="y") +
+#   labs(fill="Delivery strategy") +
+#   geom_text(x=3, y=30, label="Scatter plot") +
+#   #ggtitle(paste0(toTitleCase(sex_selection)," ",age_group_selection))+
+#   theme_void(base_size = 24) +
+#   theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 1))
+
+ggarrange(plot_map_unv_vs_target,plot_map_unv_vs_target_percentile_risk,
+                    nrow = 2, 
+                    labels = c("A", "B","C","D"),
+                    common.legend = T)
+
+
+```
+## Conclusion
