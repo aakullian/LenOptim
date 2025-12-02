@@ -23,6 +23,7 @@ regions=c("ESA") #ESA, LAC, WCA
 iso3_group <- c("KEN") # options: "ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA"
 sex_groups = c("female","male") # options: "male","female","both"
 age_groups <- c("15-24","25-34","35-49") #options: "15-19","15-24","15-49","20-24","25-29","25-34","30-34","35-39","35-49","40-44","45-49","50+"
+n_risk_groups = 4 #number of risk groups to sample from a gamma distribution of continuous risk (quantiles)
 
 #Arguments:
 indicators <- c("HIV incidence","HIV prevalence","Population","infections") #
@@ -149,7 +150,6 @@ inc_list <- naomi_ssa_shp_m_df %>%
   arrange(incidence)
 
 efficacy=e #set efficacy to e above
-n_risk_groups = 8 #number of risk groups to sample (quantiles)
 
 n=1
 for (i in seq(1,nrow(inc_list),)){

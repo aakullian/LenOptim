@@ -207,7 +207,7 @@ summarize_allocation_scenarios <- function(results_list,
         percent_reduction_in_incidence = percent_reduction,
         prep_coverage = prep_coverage,
         total_dalys_averted = total_dalys_averted,
-        total_cost = total_cost,
+        #total_cost = total_cost,
         cost_per_infection_averted = cost_per_infection_averted,
         cost_per_daly_averted = cost_per_daly_averted,
         number_needed_to_treat = number_needed_to_treat,
@@ -252,7 +252,7 @@ run_cost_and_demand_scenarios <- function(cost_per_unit_vec,
     mutate(
       scenario_id = row_number(),
       scenario_label = if (!is.null(scenario_labels)) scenario_labels else
-        paste0("Budget $", budget / 1e6, "M @ $", cost_per_unit)
+        paste0(risk_groups," risk groups (quantiles) ","Budget $", format(budget / 1e6, big.mark = ","), "M @ $", cost_per_unit)
     )
   
   # Run allocation for each combination
@@ -384,7 +384,7 @@ district_labels <- district_map1 %>%
 p_district_facilities <- ggplot(district_map1) +
   geom_sf(aes(fill = as.factor(allocated_yn)), color = "white") +
   scale_fill_manual(
-    values = c("grey", "red"),
+    values = c("grey90", "red"),
     labels = c("No", "Yes"),
     name = "Districts with PrEP allocation",
     na.value = "grey90"
@@ -814,7 +814,8 @@ generate_prep_allocation_outputs <- function(facility_df,
   # )
   # 
   # 4. Format map layout
-  label_text <- paste0("Scenario: ", selected_budget/selected_cost," Len courses,", " Max age/sex PrEP coverage among population at risk: ", (coverage_mult*0.25)*100," %")
+  label_text <- paste0("Scenario: ", format(selected_budget/selected_cost, big.mark=",")," Len courses, ", risk_groups," risk groups (quantiles),", 
+                       " Percent of target population covered: ", (coverage_mult)*100,"%")
   formatted_map <- format_prep_allocation_maps(
     maps = maps,
     result_df = result_df,

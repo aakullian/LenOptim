@@ -31,20 +31,34 @@ conflict_prefer("filter", "dplyr")
 
 ## 1. Load naomi-based analysis output
 
-if(country_iso == "KEN"){
+if(country_iso == "KEN" & risk_groups == 4){
+  load("Len_optim_data_KEN_4_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
+  data = naomi_risk_dist_targeting_KEN_4_risk_groups
+  rm(naomi_risk_dist_targeting_KEN_4_risk_groups)
+}
+
+if(country_iso == "KEN" & risk_groups == 8){
   load("Len_optim_data_KEN_8_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
+  data = naomi_risk_dist_targeting_8_risk_groups
+  rm(naomi_risk_dist_targeting_KEN_8_risk_groups)
 }
 
 if(country_iso == "MWI"){
   load("Len_optim_data_MWI_8_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
+  data = naomi_risk_dist_targeting_MWI_8_risk_groups
+  rm(naomi_risk_dist_targeting_MWI_8_risk_groups)
 }
 
 if(country_iso == "ZAF"){
   load("Len_optim_data_ZAF_8_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
+  data = naomi_risk_dist_targeting_ZAF_8_risk_groups
+  rm(naomi_risk_dist_targeting_ZAF_8_risk_groups)
 }
 
 if(country_iso == "MOZ"){
   load("Len_optim_data_MOZ_8_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
+  data = naomi_risk_dist_targeting_MOZ_8_risk_groups
+  rm(naomi_risk_dist_targeting_MOZ_8_risk_groups)
 }
 
 district_sf <- naomi_ssa_shp_m %>%
@@ -78,13 +92,13 @@ facility_coords_df <- facility_df %>%
 #filter(!is.na(longitude),!is.na(latitude)) 
 
 #Create incidence_df from the risk distribution district-level data
-n_quants = length(unique(naomi_risk_dist_targeting_8_risk_groups$quant_target))
-incidence_df <- naomi_risk_dist_targeting_8_risk_groups %>%
+n_quants = length(unique(data$quant_target))
+incidence_df <- data %>%
   mutate(quantile_target_factor = paste(quant_target-1/n_quants, "-",quant_target),
          inc_mult_group = cut(inc_mult, c(0,0.5,1,2,Inf), right=F),
          age_group_label = recode(age_group_label, "50+"="50-99"))
 
-rm(naomi_ssa_shp_m, naomi_risk_dist_targeting_8_risk_groups)
+rm(naomi_ssa_shp_m, data)
 
 #summary of new infections and pop at risk by district
 district_new_infections = data.frame(incidence_df) %>% select(area_id, sex, age_group_label, total_infected_subsample, pop_subsample) %>%
