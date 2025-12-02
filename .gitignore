@@ -1,0 +1,25 @@
+# R stuff
+.Rhistory
+.RData
+.Rproj.user/
+
+# R markdown cache and output
+*_cache/
+*_files/
+*.html
+
+# Office docs
+*.docx
+*.pptx
+*.pdf
+
+# Data files
+*.csv
+*.xlsx
+*.rda
+*.RData
+
+# Outputs
+MOZ_OUTPUT/
+RSA_OUTPUT/
+ms_outputs/
