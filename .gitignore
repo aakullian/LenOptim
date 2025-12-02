@@ -1,25 +1,12 @@
-# R stuff
-.Rhistory
-.RData
-.Rproj.user/
+# Ignore everything in R by default
+R/*
 
-# R markdown cache and output
-*_cache/
-*_files/
-*.html
+# BUT keep these four core scripts
+!R/Allocate_PreP_All_Country_Model.R
+!R/Allocate_PrEP_Data_Cleaning_All_Country.R
+!R/NAOMI_config_Allocate_PrEP_allcountry_v3.R
+!R/Run_Allocate_PrEP_All_Country_Model.R
 
-# Office docs
-*.docx
-*.pptx
-*.pdf
-
-# Data files
-*.csv
-*.xlsx
-*.rda
-*.RData
-
-# Outputs
-MOZ_OUTPUT/
-RSA_OUTPUT/
-ms_outputs/
+# And keep the Manuscript folder + all files in it
+!R/Manuscript/
+!R/Manuscript/*
