@@ -1,0 +1,89 @@
+#############################
+# Render Len Document
+#############################
+
+
+
+---
+output: word_document
+title: "Another Pandoc Markdown Article Starter and Template"
+author:
+- name: Steven V. Miller
+  affiliation: Clemson University
+- name: A Second Author Who Did Less Work
+  affiliation: The Ohio State University
+- name: A Graduate Student
+  affiliation: University of Alabama
+abstract: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec sit amet libero justo. Pellentesque eget nibh ex. Aliquam tincidunt egestas lectus id ullamcorper. Proin tellus orci, posuere sed cursus at, bibendum ac odio. Nam consequat non ante eget aliquam. Nulla facilisis tincidunt elit. Nunc hendrerit pellentesque quam, eu imperdiet ipsum porttitor ut. Interdum et malesuada fames ac ante ipsum primis in faucibus. Suspendisse potenti. Duis vitae nibh mauris. Duis nec sem sit amet ante dictum mattis. Suspendisse diam velit, maximus eget commodo at, faucibus et nisi. Ut a pellentesque eros, sit amet suscipit eros. Nunc tincidunt quis risus suscipit vestibulum. Quisque eu fringilla massa."
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+geometry: margin=1in
+#fontfamily: libertineotf
+mainfont: cochineal
+sansfont: Linux Biolinum O
+fontsize: 11pt
+# spacing: double
+endnote: no
+# pandocparas: TRUE
+sansitup: TRUE
+header-includes:
+  - \usepackage{longtable}
+  - \LTcapwidth=.95\textwidth
+  - \linespread{1.05}
+  - \usepackage{hyperref}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+## A Subsection in the Introduction
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>. Here's an obligatory citation to @xie2013ddrk.
+
+# Literature Review
+
+# Research Design
+
+## Another Subsection From Kant, Who Writes as If He Does Not Want to Be Read
+
+## Another Subsection
+
+```{r, echo=F, fig.cap = "A Simple ggplot with the mtcars Data in R", message=F, fig.width=8}
+
+mtcars %>%
+  ggplot(.,aes(wt, mpg)) + geom_point() +
+  geom_smooth(method="lm") +
+  labs(caption = "Data: 1974 Motor Trend US magazine",
+       x = "Weight (1,000 Pounds)",
+       y = "(U.S.) Miles per Gallon")
+
+```
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+# Results
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r}
+plot(mtcars)
+```
+
+# Conclusion
+
+\newpage

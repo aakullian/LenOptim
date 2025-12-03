@@ -1,0 +1,1138 @@
+---
+title: "Impact and cost-effectiveness of geographic prioritization for delivery of
+  long-acting PrEP in southern and eastern Africa"
+author:
+- Adam Akullian (Gates Foundation)
+- "Jeff Imai-Eaton (Harvard University)"
+- Monisha Sharma (University of Washington)
+- Michelle O'Brien (Gates Foundation)
+- Geoff Garnett (London School of Hygiene and Tropical Medicine)
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    df_print: paged
+  word_document:
+    fig_caption: true
+    reference_docx: "custom-reference.docx"
+fontsize: 11pt
+geometry: margin=1in
+bibliography: len_references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(sf)
+library(raster)
+library(ggplot2)
+library(classInt)
+library(metR)
+library(ggrepel)
+library(viridis)
+library(ggpubr)
+library(ggpattern)
+#library(kableExtra)
+library(webshot2)
+library(patchwork)
+
+# Load data object for full country list
+load("Len_optim_data_FULL_COUNTRY_LIST_v2.RData")
+load("incidence_df_quantiles.RData") #load full district data with all quantiles (for ZAF)
+
+```
+
+**Abstract**
+
+Background
+
+Long-acting injectable pre-exposure prophylaxis (PrEP), including Lenacapavir, offers an opportunity to accelerate HIV incidence declines in southern and eastern Africa. Given constrained HIV budgets, competing needs for health resources, and high product and delivery costs, prioritization strategies are needed to maximize HIV prevention impact and maximize value.
+
+Methods
+
+We used district-level estimates of HIV incidence and at-risk population sizes from the Naomi model published by UNAIDS to estimate the potential health impact and cost-effectiveness of Lenacapavir in 837 districts across 11 of the highest-burden countries in eastern and southern Africa. We evaluated the impact of universal provision (PrEP offered to all) versus risk-prioritized delivery in different geographies by sex and age. We calculated the number needed to treat, infections averted, cost per disability-adjusted life year (DALY) averted, and the threshold price at which Lenacapavir becomes cost-effective at less than 500 dollars per DALY, assuming an average \$10,000 lifetime treatment cost and 20 DALYs per HIV infection. We conducted sensitivity analyses for heterogeneity in risk of those most likely to uptake PrEP, looking specifically at districts across South Africa.
+
+Results
+
+In high HIV-incidence districts of southern Africa, Lenacapavir was cost-effective at a maximum cost of 130 dollars per person-year, but much lower maximum costs were required for cost-effective delivery in lower-incidence regions, under 40 dollars per person-year. Focusing provision in the highest-incidence quintile of districts, representing 20 percent of the population, could avert about half of new infections. Assuming Lenacapavir users have more than two-fold higher HIV risk than the population average, a universal offer strategy to women aged 15 to 24 in South Africa was cost-effective across almost all districts. District-level cost-effectiveness maps identified settings where universal versus risk-prioritized provision would maximize impact for a given budget.
+
+Conclusions
+
+Marked heterogeneity in HIV incidence across districts and populations drove large differences in threshold cost and health impact of Lenacapavir provision. The highest HIV incidence districts could cost-effectively deliver Lenacapavir at higher costs than low-incidence districts. Streamlined PrEP delivery strategies with universal offer and user self-selection in high-incidence regions can achieve high impact and cost-effectiveness.
+
+**Introduction**
+
+The availability of highly effective long-acting pre-exposure prophylaxis (PrEP), including the 6-monthly injectable Lenacapavir, provides an opportunity to accelerate the declines in HIV incidence observed in southern and eastern Africa over the last two decades [@birdthistle_recent_2019; @vandormaelDeclinesHIVIncidence2019a; @akullian2020]. However, with reduced donor funding and increasingly constrained budgets for HIV treatment and prevention, risk prioritization will be essential to achieve meaningful impact at reasonable cost, particularly in low- and middle-income settings such as Africa where HIV burden is highest. In launching and scaling new HIV prevention tools there is an inherent trade-off between affordability and impact, which is especially pertinent in the face of current declining resources for the HIV response. HIV prevention is often only cost-effective and affordable when used by those with the highest risk of acquisition, but due to large heterogeneity in HIV risk in a population [@Nagelkerke2018], most new infections occur among a greater share of the population with a moderate level of risk [@wu2024HealthImpactBudget; @kaftan2025CostThresholdsAnticipated]. This raises questions about where, how, and to whom the newly approved Lenacapavir should be distributed.
+
+With increasingly constrained budgets for HIV treatment and prevention and high costs associated with both procurement and delivery of LA-PrEP, prioritization to those with substantial HIV risk will be essential to maximize Lenacapavir efficiency and impact. Several risk prediction models have been developed and validated as tools to identify those at highest HIV risk based on individual-level demographic and behavioral co-variates [@balkusEmpiricHIVRisk2016a; @balkusPerformanceValidatedRisk2018a]. These models, however, have demonstrated low-to-moderate performance @jia2022RiskScoresPredicting and often fail to predict HIV incidence in out-of-sample populations [@Giovenco2019]. As result, these models miss large numbers of individuals who go on to acquire HIV and their utility in prioritizing PrEP to those with high risk may be limited. Furthermore, implementing a risk prioritization approach adds costs and complexity to product delivery, including the effort needed to screen and reach the highest risk populations. Risk screening tools may also stigmatize populations identified as “high-risk” [@Celum2020], potentially leading to lower uptake. As a result, the use of risk-screening tools must weigh the benefits of focused prevention against the limitations and costs associated with their use.
+
+Simpler PrEP delivery strategies, such as a universal offer of PrEP in high-incidence settings, have been proposed as an alternative to risk-prioritization models [@Donnell2021; @Roberts2022]. Universally offering PrEP overcomes the limitations of risk-screening and allows the user to decide whether and when to take PrEP based on their own risk assessment. Uptake and adherence to PrEP is higher among those who self-assess risk [@Koss2020] and may, in fact, closely align with an individual’s empirical risk [@Kinuthia2023], resulting in substantial incidence reduction in real-world settings @Donnell2021. A re-analysis of data from the ECHO trial shows that the HIV risk of those who took up PrEP was about six times higher than those who did not (corresponding to a 2-fold higher risk in prep users compared to the overall population). Models can evaluate the impact and efficiency of offering long-acting PrEP to a larger segment of the population, especially considering the potential cost savings and simplification in the mode of delivery associated with making PrEP universally available.
+
+Most models that have evaluated the health impact and cost-effectiveness of Lenacapavir in eastern and southern Africa (ESA) have utilized complex individual-based network models [@wu2024HealthImpactBudget; @kaftan2025CostThresholdsAnticipated] . Such models are resource-intensive to run and rely on a large amount of empiric data for model parameterization. Simpler models may provide similarly accurate results while requiring fewer parameters and being user friendly for in-country decision makers [@Garnett2025]. Here we use small area estimates of incidence at the district level across ESA in a simple model to project the health impact and cost-effectiveness of Lenacapavir. We develop a heuristic approach for LA-PrEP prioritization using a simple set of demographics, epidemiologic, and costing parameters to estimate cost-effectiveness and impact of various delivery prioritization scenarios. Our results can inform epidemiological thresholds where LA-PrEP could be offered universally versus risk-prioritized to optimize the largest impact for the lowest cost. Our modeling approach can be leveraged for other similar analyses of HIV prevention scale up.
+
+**Methods**
+
+Simple mathematical formulas were used to estimate the direct health impact and cost-efficiency of long-acting PrEP. Equation inputs included baseline incidence (in the absence of PrEP), PrEP efficacy, duration of protection, and population coverage (See appendix for equation inputs).
+
+Parameterization and assumptions
+
+Model parameters and values are shown in Table 1. We assumed Lenacapavir efficacy of 95% for 6 months based on phase III efficacy trials, which found 100% protection against HIV acquisition among cisgender females and 96% efficacy in a population of cisgender men, transgender women, transgender men, and gender-non-binary persons [@Bekker2024; @Kelley2025]. We assumed a baseline Lenacapavir cost of \$130 per person per year, which reflects the fully loaded costs of Lenacapavir provision including drugs (assumed to be \$40 + a \$17 loading dose based on recent negotiations with Gilead [cite]), HIV testing, personnel, consumables, and demand generation. We varied this cost in sensitivity analyses. HIV prevalence and incidence data by geography, age, and sex were based on UNAIDS calculations which were estimated using their NAOMI model [@Eaton2021]. NAOMI synthesizes data from population-based surveys and sentinel surveillance to provide estimates of the local pattern of HIV infection. HIV prevalence and incidence estimates were applied in the cost-effectiveness and impact equations to estimate the populations for which the use of Lenacapavir will be cost-effective. and lifetime treatment costs of someone living with HIV, a function of the cumulative costs of diagnosis and care derived from the average discounted costs [@Rose2021] per year of treatment summed over the expected lifetime of the average person living with HIV. We calculate DALYs associated with HIV from the proportion of PLHIV who lose their life from the infection and the cumulative disability experienced over a lifetime of infection, again discounted.
+
+Our base case calculations assume that those using Lenacapavir have the average risk for the sex and age group in their district. However, within these demographically defined groups there is likely heterogeneity in risk, due to a complex set of behavioral and biological factors. For our primary analysis we assume that individual-level risk heterogeneity in the population follows a gamma distribution: r \~ Gamma (shape k, scale θ), where k is fixed to account for within-district skew, and scale is set using district-level incidence. Gamma distributions have been used to represent skewness in the distribution of transmissions and acquisitions across a population for several infectious diseases [@Hilton2024]. In HIV epidemics gamma distributions can be used to approximate the skewness in the number of sexual partners per year [@andersen1988EpidemiologicalParametersHIV], where a small fraction of individuals has high activity versus a larger fraction with average or low activity. For our analysis we assumed risk follows an exponential gamma distribution with a shape parameter of 1 to represent a highly skewed distribution of risk, following previous work (cite Heterogeneity in susceptibility dictates the order of epidemic models, 2021). We used Lorenz concentration curves to estimate the cumulative fraction of new infections that occur in a cumulative share of the population at risk (ordered by risk from high to low). Sensitivity analysis
+
+We conducted a sensitivity analysis to explore different assumptions regarding the risk quantile of the population most likely to uptake PrEP based on the risk heterogeneity curve. We tested the sensitivity of our results across four groups represented as quantiles of the risk distribution (0-25%, 25-50%, 50-75%, and 75-100%), corresponding to groups with a relative difference in risk from the district-level mean of \<0.5, 0.5-1, 1-2, and \>2, respectively. Based on results from the ECHO trial, which found offering PrEP universally resulted in people who initiated PrEP having twice the HIV risk as the average population risk, representing 25% of the population (CITE).
+
+**Results**
+
+District-level heterogeneity in HIV incidence by age and sex is shown in Figures 1 and 2. Among women, district-level HIV incidence is highest in the 20–24-year age group across most districts – though in some districts in South Africa, incidence was highest in the youngest age group. Incidence was lowest in those 35 years and older. In contrast, male HIV incidence was universally higher across districts among those 20 years and older, with especially low incidence in the 15–19-year age group (Figure 1). HIV incidence mapped in Fig 2a was heterogeneous across districts in eastern and southern Africa, with the highest incidence among adults of both sexes aged 15-49 years in Southern Africa and pockets of high incidence in east Africa (figure 2a). Due to geographic heterogeneity in incidence across districts, most HIV infections are concentrated in a small fraction of the population (figure2b). Overall, 50% of new infections could be prevented by covering less than 20% of the population with Lenacapavir. However, as Lenacapavir coverage increases its efficiency declines as more districts with lower incidence are included.
+
+Figure 3 displays geographic heterogeneity in the number needed to treat (NNT), cost per DALY averted, and maximum fully loaded per-dose cost for Lenacapavir to be cost-effective (when \<500 USD per DALY is the threshold for cost-effectiveness) in similar maps derived from the underlying district-level incidence. Districts where HIV incidence is high have lower NNT, lower cost per DALY averted, and higher price threshold at which Lenacapavir would be cost effective. South Africa, Mozambique, and eSwatini have several districts where less than 200 individuals at risk would require Lenacapavir to avert one infection which leads to a price threshold over 100USD.
+
+To explore which districts could efficiently offer universal (regardless of assessed risk) Lenacapavir to a target age-group (in this case 15-24-year-old women) we map the number of districts within a country where universal offer would be cost-effective (at a threshold of 500 USD/DALY averted) as a function of the Lenacapavir cost (Figure 4). Panel A shows the districts where a universal offer to women age 15-24 years would be cost-effective if the cost of Lenacapavir were 130 USD per person per year (red districts) versus 40 USD per person per year (adding maroon districts), and in panel B shows a sliding scale for the cost of Lenacapavir with the cumulative percentage of HIV infections averted, with more districts added as the cost declines. For most of South Africa, Mozambique, eSwatini, and Lesotho, Lenacapavir would be cost effective for a price of \< 130 USD per person per year. In lower-to-moderate incidence regions, the cost at which Lenacapavir is cost-effective is substantially lower. At 40 USD/pp/yr most districts in southern Africa and several districts in eastern Africa meet the cost-effectiveness threshold.
+
+Figure 5a illustrates the different functional forms of risk heterogeneity at the individual-level, [varying the skewness of a gamma distribution by different shape values (0.1, 1, 10)], considered in our analysis. The Lorenz curve shows the cumulative proportion of the population with a given level of risk (ordered from lowest to highest) and the cumulative fraction of infections falling within that proportion of the population (figure 5b). In the case of a gamma with shape 1 (equivalent to an exponential distribution), more than 50% of infections fall within the top 25% of the population with the highest risk and those in this population have on average, twice the risk of the general population.
+
+Figure 6 shows the cumulative % of infections that could be averted with an increasingly inclusive set of districts according to two scenarios, one where Lenacapavir is prioritized to the average risk group versus to the upper quartile risk group with twice the risk as the general population. In the average uptake scenario, a Lenacapavir coverage of 1% yielded a 3% reduction in incidence (among all adults 15-49) and a coverage of 3% yielded a 9% reduction in risk. In the higher risk uptake scenario, a 1% coverage yielded a 7% reduction in risk, and a 3% coverage yielded a 16% reduction in risk. We compare these results to two-point estimates (shown in black triangles) from a previously published mathematical model of Lenacapavir impact in South Africa where Lenacapavir is prioritized to the highest risk sub-populations based on behavioral factors (namely female sex workers (FSW), their clients, and adolescent girls and young women (AGYW) with 2+ sex partners). In this model a 1% coverage of Lenacapavir resulted in a 12% reduction in incidence, and a 3 % coverage resulted in a 20% reduction, a relatively similar effect as our higher risk uptake geographic model.
+
+Figure 7 shows a sensitivity analysis comparing cost effectiveness of district-level allocation of Lenacapavir in South Africa under different assumed HIV risk among those initiating Lenacapavir. When individuals using Lenacapavir have 1-2-fold greater risk of HIV acquisition than the population average, Lenacapavir is generally cost-effective across districts, and at \>2 fold greater risk it is likely cost saving. Figure 8 displays district-level maps in South Africa showing where universal offering of Lenacapavir would be cost-effective under an average versus high (twice the district-level average) uptake assumption. Under the average uptake assumption, universal offer would only be cost effective for women under 25 years in most districts in the eastern part of the country where incidence is higher. Under the higher risk uptake assumption, many more districts are under the cost-effectiveness threshold of \<\$500/DALY. In this scenario, focusing universal offer of Lenacapavir to 20–35-year-old men and women would be a cost-effective strategy
+
+**Discussion**
+
+In this analysis, we applied a heuristic model based on district-level HIV incidence to project the health impact and cost-effectiveness of different Lenacapavir (LENACAPAVIR) prioritization scenarios across ESA. Despite its relative simplicity and minimal set of covariates, our model can be used to estimate impact, cost-effectiveness, and maximum cost thresholds to achieve cost-effectiveness based on the number needed to treat to avert one infection and the costs of an infection. District-level cost thresholds can guide decision-making around regarding the geographic regions in which Lenacapavir can be efficiently allocated universally versus requiring a risk-prioritized approach in the face of budgetary constraints and opportunity costs. Universal allocation offers practical advantages for policymakers, who must make urgent decisions with constrained budgets and limited data.
+
+A geographic approach to Lenacapavir allocation overcomes several important limitations of delivery using targeting based on behaviors. Previous risk-prediction models have been developed to identify those at highest risk of HIV based on demographic and behavioral factors like number of recent sexual partners, marital status, presence of an STI, and frequent alcohol use [cite]. However, these models have limited predictive performance, largely because they are trained on self-reported sexual behavior data, which can be unreliable. A well-known risk scoring model for HIV risk, for example, demonstrated moderate performance (a combined area under the curve (AUC) = 0.62) when validated using data from several adult populations across eastern and southern Africa, and poor performance (AUC of 0.55) when used to predict HIV acquisition in a large cohort of young South African women [cite].These tools can also inadvertently stigmatize prep use, which impairs the normalized adoption of PrEP in high-incidence communities. If a prevention product is considered a marker of certain higher-risk sexual behaviors, it may not be widely accepted. Additionally, risk screening can add substantial costs and complexity to delivery programs, often requiring trained providers to counsel and administer screening questions. Risk screening can also increase stigma. As a result, the utility and feasibility of behavioral risk screening as a prioritization tool for LA-PrEP is limited.
+
+In response to the pitfalls of behavioral risk-targeting, new approaches to delivery have been proposed to allow an individual to self-assess their own risk and decide whether and when to use PrEP. This universal delivery approach overcomes many of the limitations of behavioral screening – it reduces stigma, instills agency and trust in the individual, and may streamline prep implementation. Real-world evidence supports the impact and efficiency of the universal offer approach. Risk scoring tools have been shown to perform only as well as self-assessment of risk – with similar incidence in those identified as high risk by both modes of selection. Furthermore, providing PrEP without restriction can produce high impact and efficiency at the population level. In the ECHO trial, a study on the effects of hormonal contraceptive on HIV risk, when oral PrEP was made available to all women half-way through the trial, 25% of the women initiated PrEP, resulting in a 50% reduction in population-level HIV incidence, suggesting good alignment with HIV risk periods. This study supports the theory that the highest risk individuals will uptake PrEP when it is offered to all.
+
+The mechanism of self-selection by risk builds natural efficiency into delivery programs that have historically been challenged in their ability to reach the groups in most need of prevention, thus expanding the map where HIV programs can offer Lenacapavir universally without suffering from lower efficiency. In lower incidence areas, self-selection may not be sufficient to justify universal offer, and in those areas a more targeted approach is likely needed to achieve cost-effective impact. Still, geographic prioritization may save time and money for HIV programs that would otherwise be spent on reaching and screening populations for eligibility. These cost savings may further increase the efficiency of geographic approach to delivery. Further data collection from Lenacapavir delivery programs can provide valuable information who is most likely to initiate prep. These lessons can help improve models to guide more effective Lenacapavir allocation for the greatest impact.
+
+There are several limitations to our modeling approach that must be considered in the interpretation of our results. First, we assume an average lifetime costs of HIV care and a DALY burden for living with HIV. Further exploration of the heterogeneity and trends in these values is warranted. We also adopt a conventional \$500 per DALY threshold for cost effectiveness which may not correspond with the explicit or implicit value used by decision makers in a specific country. Our model only estimates the direct impact of Lenacapavir over a short time-period and does not include transmission dynamics needed to estimate the number of subsequent infections averted from preventing a single case (herd immunity). This includes the number of vertical transmissions that would be averted by covering pregnant women with Lenacapavir. Therefore, our results likely underestimate the real impact of Lenacapavir. Second, our model does not include explicitly defined risk groups with relatively larger levels of risk like sexual minority men or women who engage in sex work. We assume a continuous distribution of risk in a population that may not reflect the true heterogeneity in risk across discrete groups defined by sexual behavior. However, models that do incorporate these groups must make large assumptions on the sizes and relative incidence rates of those groups – data that are often unavailable or unreliable.
+
+Our analysis has several strengths. We utilize a simple modeling approach yet our results regarding health impact and maximum per dose costs are similar to a more complex modeling analysis (Wu et al). Therefore, our modeling framework can more easily be utilized by policymakers to assess the efficiency of Lenacapavir across heterogeneous geographic regions.
+
+**Conclusion**
+
+Mapping the cost-effectiveness and impact of Lenacapavir illustrates where universal provision to demographic groups would and would not be the optimal policy. The expansion in cost-effective districts as the cost of Lenacapavir decreases can be calculated. Results can inform policy decisions for efficient Lenacapavir implementation.
+
+# References
+
+```{r, echo=FALSE}
+library(knitr)
+
+# Example skeleton table
+param_tbl <- data.frame(
+  Parameter = c("Lenacapavir efficacy", "DALYs associated with an HIV case", "Average lifetime treatment cost","Base cost per person-year of Lenacapavir", 
+                "Risk heterogeneity shape (k)", "Risk heterogeneity scale (θ)"),
+  Value     = c("0.95", "20", "$10,000 USD", "$130 USD", "1","district incidence / shape"),  # leave blank or fill in
+  Source    = c("", "", "", "", "", "")
+)
+
+kable(param_tbl, caption = "Model paramters")
+```
+
+```{r fig-age-patterns, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="**Figure 1.** District-level HIV incidence by age relative to 15-19 y/o's: (A) Women, (B) Men.", fig.width=15, fig.height=9, out.width="100%"}
+
+library(scales)
+
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+#iso3_selection <- c("MOZ")
+
+iso3_levels <- sort(iso3_selection)  # or hardcode if needed
+iso3_colors <- setNames(viridis(length(iso3_levels)), iso3_levels)
+
+plot_age_dist_female <- naomi_ssa_shp_m %>% 
+  filter(sex=="female", age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  group_by(area_id, sex) %>%
+  mutate(inc_rel_1519=incidence/incidence[age_group_label=="15-19"]) %>%
+  ggplot(aes(x = age_group_label, y = inc_rel_1519,color=iso3)) +
+  geom_point(size=2,alpha=0.5) +
+  geom_line(aes(group=area_id), stat = "smooth", method = loess, span=0.7, size = 1,alpha=0.05) +
+  geom_line(aes(group=1), stat = "smooth", method = loess, span=0.8, size = 2,color="black",linetype=2) +
+  scale_color_manual(values = iso3_colors, drop = FALSE) +
+  #viridis::scale_color_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(x = "Age", y = "Incidence relative to 15-19") +
+  scale_y_continuous(limits=c(0.25,1.75), trans="log2", labels = label_number(digits = 2))+
+  theme_bw(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        strip.background = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())  
+
+plot_age_dist_crude <- naomi_ssa_shp_m %>% 
+  filter(sex!="both",age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  group_by(area_id, sex) %>%
+  ggplot(aes(x = age_group_label, y = incidence*1000,color=country)) +
+  geom_point(size=2,alpha=0.5) +
+  geom_line(aes(group=area_id), stat = "smooth", method = loess, span=0.7, size = 1,alpha=0.05) +
+  geom_line(aes(group=1), stat = "smooth", method = loess, span=0.8, size = 2,color="black",linetype=2) +
+  #viridis::scale_color_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(x = "Age", y = "Incidence per 1000 py") +
+  facet_grid(~sex) +
+  #scale_y_continuous(limits=c(0.25,1.75), trans="log2", labels = label_number(digits = 2))+
+  theme_bw(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        strip.background = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+
+#iso3 %in% c("ZAF","SWZ","LSO","MOZ","ZMB","ZWE")
+
+plot_age_dist_male <- naomi_ssa_shp_m %>% 
+  filter(sex=="male", age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  group_by(area_id, sex) %>%
+  mutate(inc_rel_1519=incidence/incidence[age_group_label=="15-19"]) %>%
+  ggplot(aes(x = age_group_label, y = inc_rel_1519,color=iso3)) +
+  geom_point(size=2,alpha=0.5, show.legend = FALSE) +
+  geom_line(aes(group=area_id), stat = "smooth", method = loess, span=0.6, size = 1,alpha=0.05, show.legend = FALSE) +
+  geom_line(aes(group=1), stat = "smooth", method = loess, span=0.8, size = 2,color="black",linetype=2, show.legend = FALSE) +
+  scale_color_manual(values = iso3_colors, drop = FALSE) +
+  labs(x = "Age", y = "") +
+  scale_y_continuous(trans="log2", labels = label_number(digits = 1))+
+  theme_bw(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=2),
+        strip.background = element_blank(), 
+        legend.position = "side",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())  
+
+plot_age_dist_male_crude <- naomi_ssa_shp_m %>% 
+  filter(sex=="male", age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  group_by(area_id, sex) %>%
+  ggplot(aes(x = age_group_label, y = incidence,color=country)) +
+  geom_point(size=2,alpha=0.5) +
+  geom_line(aes(group=area_id), stat = "smooth", method = loess, span=0.7, size = 1,alpha=0.05) +
+  geom_line(aes(group=1), stat = "smooth", method = loess, span=0.8, size = 2,color="black",linetype=2) +
+  #viridis::scale_color_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(x = "Age", y = "Incidence relative to 15-19") +
+  #scale_y_continuous(limits=c(0.25,1.75), trans="log2", labels = label_number(digits = 2))+
+  theme_bw(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        strip.background = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+
+#gridExtra::grid.arrange(plot_age_dist_female, plot_age_dist_male, ncol = 2)
+
+p <- plot_age_dist_female + plot_age_dist_male +
+  plot_layout(ncol = 2, guides = "collect") &
+  theme(legend.position = "bottom")
+
+p_combined <- p + plot_annotation(tag_levels = 'A')
+
+p_combined
+```
+
+```{r infections averted by coverage across all countries, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 2.** (A) Districts where Len would avert 25% of infections with 5% coverage among the population at risk with the highest incidence (B) Cumulative percent of infections averted with increasingly inclusive population at risk (age and sex stratified). Black triangles indicate coverage and impact estimates of a len implementation strategy from Wu et al, an individual-based transmission model from South Africa in which Len is allocated to the highest risk populations (namely FSW, their clients and AGYW with 2+ sex partners).  In this model a 1% coverage of Len resulted in a 12% reduction in incidence, and a 3 % coverage resulted in a 20% reduction.", fig.width=25, fig.height=10}
+
+library(patchwork)
+library(ggrepel)
+
+#age_group_selection <- "15-49"
+#sex_selection <- "female"
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+#iso3_selection <- c("ZAF")
+
+naomi_total_1549 <- as.data.frame(naomi_ssa_shp_m) %>%
+  filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+  summarise(total_inf = sum(infections_expected),
+            total_popatrisk = sum(pop_at_risk))
+
+# naomi_total_1549 <- as.data.frame(naomi_ssa_shp_m) %>%
+#   filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+#   summarise(total_inf = sum(infections_expected),
+#             total_popatrisk = sum(pop_at_risk))
+
+# Plot B: Line plot with tag
+inc_curve <- naomi_ssa_shp_m %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  #filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  filter(sex!="both",age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  #group_by(country) %>%
+  #arrange(country, -incidence) %>%
+  arrange(-incidence) %>%
+  #inner_join(naomi_total_1549, by = join_by(iso3)) %>%
+  mutate(
+    total_inf = naomi_total_1549$total_inf,
+    total_popatrisk = naomi_total_1549$total_popatrisk,
+    cum_pop_1 = cumsum(pop_at_risk),
+    cum_pop = cumsum(pop_at_risk) / total_popatrisk,
+    impact_pop_1 = cumsum(infections_expected),
+    impact_pop = cumsum(infections_expected) / total_inf,
+    id = "average_risk"
+    #label = ifelse(pt == min(pt), country, NA)
+  )  %>%
+  dplyr::select(iso3, pop_at_risk, cum_pop, impact_pop, area_id, id)
+
+iso3_labels <- inc_curve %>%
+  group_by(iso3) %>%
+  slice_min(cum_pop, with_ties = FALSE) %>%
+  ungroup()
+
+library(RColorBrewer)
+
+iso3_levels <- sort(iso3_selection)  # or hardcode if needed
+iso3_colors <- setNames(viridis(length(iso3_levels)), iso3_levels)
+
+ pop_idx <- which.min(abs(inc_curve$impact_pop - 0.5))
+ # Get the corresponding pop_at_risk value
+ fiftypctvalue <- inc_curve$cum_pop[pop_idx] * 100 
+  
+plot_inc_curve <- inc_curve %>%
+  ggplot(aes(x = cum_pop * 100, y = impact_pop * 100)) +
+  geom_point(aes(color = iso3, size = pop_at_risk, alpha = 0.0001)) +
+  scale_color_manual(values = iso3_colors, drop = FALSE) +
+  #scale_color_manual(values = iso3_colors["ZAF"]) +
+  geom_abline(intercept = 0, slope = 1) + # Adds a y=x line
+  geom_vline(xintercept = fiftypctvalue, linetype = 2) +
+  #ylim(0,100)+ xlim(0,11)+
+  ylim(0,110)+ xlim(0,100)+
+  geom_text_repel(
+  data = iso3_labels,
+  aes(x = cum_pop * 100, y = impact_pop * 100, label = iso3),
+  size = 4,
+  max.overlaps = 15,
+  show.legend = FALSE
+)+
+  scale_size(range = c(1, 50)) +
+  labs(
+    x = "Coverage (%)",
+    y = "Cumulative (%)",
+    tag = "B",
+    color = "Country"  # Legend title for iso3
+  ) +
+  guides(
+  size = "none",
+  alpha = "none",
+  color = guide_legend(
+    title = "Country",              # optional, change legend title
+    override.aes = list(size = 5)   # make legend dots bigger
+  )
+)+
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position = c(0.98, 0.02),    # bottom right inside plot (relative coords)
+    legend.justification = c("right", "bottom"),
+    legend.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+ area_idx <- unique(inc_curve$area_id[inc_curve$impact_pop<=0.5 & inc_curve$id=="average_risk"])
+
+ 
+ # Plot A: Map with tag inside
+plot_map_inc <- ggplot() +
+  #geom_sf(data = naomi_ssa_shp_m, fill = NA, color = NA) +  # invisible full bounding box
+  geom_sf(data = naomi_ssa_shp_m %>%
+            filter(age_group_label == "15-49" & sex == "both" & iso3 %in% iso3_selection),
+          aes(fill = inc_cat), show.legend = TRUE) +
+  geom_sf(data = naomi_ssa_shp_m %>%
+            filter(area_id %in% area_idx),
+          fill = NA, color = "red", linewidth = 0.75, show.legend = FALSE) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(
+    fill = "Incidence\n(per 1000py)",
+    tag = "A"
+  ) +
+  theme_void(base_size = 20) +
+  theme(
+    legend.position = c(0.15, 0.80),
+    legend.title = element_text(size = 14),     # bigger title
+    legend.text = element_text(size = 12),      # bigger labels
+    legend.key.size = unit(0.5, "cm")           # bigger colored boxes
+  )
+
+
+library(cowplot)
+
+combined_plot <- cowplot::plot_grid(
+  plot_map_inc,
+  plot_inc_curve,
+  ncol = 2,
+  align = "h",
+  rel_widths = c(2, 3)
+)
+
+combined_plot
+```
+
+```{r mapping, evale=FALSE, fig.cap = "**Figure 2.** (A) Incidence rate among adults 15-49 by district. Districts with a cumulative percent of new infections (ranked from high to low incidence) > 50% are highlihght in red. (B) Cumulative percent of all new infections occuring within a cumulative percent of districts (ranked from high to low by incidence). 50% of all incident infections occur in 20% of the districts with the highest incidence", fig.width=10, fig.height=7, out.width="100%"}
+
+# Set parameters
+age_group_selection <- "15-49"
+sex_selection <- "both"
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+
+data = naomi_ssa_shp_m %>% filter(age_group_label == age_group_selection & sex == sex_selection) 
+#length(unique(data$area_id[data$pt>130]))/length(unique(data$area_id))
+
+# Line plot: cumulative incidence by district
+rank <- naomi_ssa_shp_m %>%
+  as.data.frame() %>%
+  filter(age_group_label %in% age_group_selection, sex %in% sex_selection, iso3 %in% iso3_selection) %>%
+  group_by(sex, age_group_label) %>%
+  arrange(-incidence) %>%
+  mutate(
+    rank = row_number(),
+    quantile = rank / max(rank),
+    cum_pop_at_risk_p = cumsum(pop_at_risk) / sum(pop_at_risk),
+    cum_inf_averted_p = cumsum(infections_averted) / sum(infections_averted)
+  )
+
+rank_1524F <- naomi_ssa_shp_m %>%
+  as.data.frame() %>%
+  filter(age_group_label %in% c("15-24"), sex %in% c("female"), iso3 %in% iso3_selection) %>%
+  group_by(sex, age_group_label) %>%
+  arrange(-incidence) %>%
+  mutate(
+    rank = row_number(),
+    quantile = rank / max(rank),
+    cum_pop_at_risk_p = cumsum(pop_at_risk) / sum(pop_at_risk),
+    cum_inf_averted_p = cumsum(infections_averted) / sum(infections_averted)
+  )
+
+rank_half <- rank %>% filter(cum_inf_averted_p < 0.5)
+
+# Map with embedded legend
+plot_map_inc_1549 <- naomi_ssa_shp_m %>%
+  filter(age_group_label %in% age_group_selection, sex %in% sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = inc_cat), show.legend = TRUE) +
+  geom_sf(data = naomi_ssa_shp_m %>%
+          filter(age_group_label %in% age_group_selection, sex %in% sex_selection, area_id %in% unique(rank_half$area_id)),
+          fill = NA, color = "red", linewidth = 0.5, show.legend = FALSE) +
+  geom_sf(data=africa_adm0_cropped_subs, color="black", fill=NA, linewidth=0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  #facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(fill = "Incidence\n(per 1000py)") +
+  theme_void(base_size = 16) +
+  theme(
+    legend.position = c(0.1, 0.75),              # upper left corner
+    legend.background = element_blank(),         # remove box
+    legend.key = element_blank(),                # remove box around legend keys
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 9)
+  )
+
+plot_popatrisk_infections_rank_1549 <- rank %>%
+  ggplot() +
+  geom_line(aes(x = cum_pop_at_risk_p * 100, y = cum_inf_averted_p * 100,
+                color = age_group_label, linetype = sex), size = 1) +
+  scale_linetype_manual(values = c(1, 2)) +
+  geom_abline() +
+  geom_vline(xintercept = (100 * rank %>%
+    filter(cum_inf_averted_p >= 0.5) %>%
+    slice_min(abs(cum_inf_averted_p - 0.5), with_ties = FALSE) %>%
+    pull(cum_pop_at_risk_p)), linetype=2) +
+  labs(x = "Cumulative population at risk (%)", y = "New infections (%)") +
+  theme_bw(base_size = 16) +
+  theme(
+    legend.position = "none",
+    panel.border = element_blank(),              # removes outer box
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black")    # add back axis lines
+  )
+
+# Combine both plots
+p <- plot_map_inc_1549 + plot_popatrisk_infections_rank_1549 +
+  plot_layout(ncol = 2) &  # ← removed `guides = "collect"`
+  theme(strip.text = element_blank())
+
+p_combined <- p + plot_annotation(tag_levels = 'A')
+
+p_combined  # <-- this line ensures the plot is returned and caption is applied
+```
+
+```{r mapping_2, echo=FALSE, message=FALSE, warning=FALSE,fig.cap = "**Figure 3.** (A) Number needed to treat (person-years of PrEP to avert one infection), (B) Cost per DALY averted, (C) Price threshold to achieve cost effectiveness (at $500 per DALY averted) among women 15–24 years of age by district.",fig.width=20, fig.height=12, out.width="100%"}
+
+age_group_selection = "15-49"
+sex_selection="both"
+iso3_selection <- c("ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA")
+#iso3_selection="ZAF"
+
+africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+
+# Plot A
+plot_map_nnt_F1524 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = nnt_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "A", fill = "Number needed to treat") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Plot B
+plot_map_cd_F1524 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = cd_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "B", fill = "Cost per DALY averted") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Plot C
+plot_map_pt_F1524 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = pt_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "C", fill = "Price threshold ($/yr)") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Combine plots (no external tags needed)
+p <- plot_map_nnt_F1524 + plot_map_cd_F1524 + plot_map_pt_F1524 +
+  plot_layout(ncol = 3) &
+  theme(strip.text = element_blank())
+
+p  # ← return plot object with embedded internal tags
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 4.** (A) District-level incidence among women 15–24 with cost-effective districts outlined in red. (B) Cumulative infections averted by price threshold for each country.", fig.width=20, fig.height=10}
+
+library(patchwork)
+library(ggrepel)
+
+age_group_selection <- "15-24"
+sex_selection <- "female"
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+
+# Plot A: Map with tag inside
+plot_map_inc_pt100_1524F <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = inc_cat), show.legend = TRUE) +
+  geom_sf(data = naomi_ssa_shp_m %>%
+            filter(age_group_label == age_group_selection & sex == sex_selection & pt > 40),
+          fill = NA, color = "darkred", linewidth = 0.75, show.legend = FALSE) +
+   geom_sf(data = naomi_ssa_shp_m %>%
+            filter(age_group_label == age_group_selection & sex == sex_selection & pt > 130),
+          fill = NA, color = "red", linewidth = 0.75, show.legend = FALSE) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(
+    fill = "Incidence\n(per 1000py)",
+    tag = "A"
+  ) +
+  theme_void(base_size = 20) +
+  theme(
+    legend.position = c(0.20, 0.80),
+    legend.title = element_text(size = 14),     # bigger title
+    legend.text = element_text(size = 12),      # bigger labels
+    legend.key.size = unit(0.5, "cm")           # bigger colored boxes
+  )
+
+naomi_total_1549_by_country <- as.data.frame(naomi_ssa_shp_m) %>%
+  filter(iso3 %in% iso3_group, age_group_label =="15-49", sex == "both") %>%
+  group_by(iso3) %>%
+  summarise(total_inf_1549_bothsexes_country = sum(infections_expected),
+            total_popatrisk_1549_bothsexes_country = sum(pop_at_risk))
+
+# Plot B: Line plot with tag
+plot_price_target <- naomi_ssa_shp_m %>%
+  as.data.frame() %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  group_by(country) %>%
+  arrange(country, -pt) %>%
+  inner_join(naomi_total_1549_by_country, by = join_by(iso3)) %>%
+  group_by(country) %>%
+  mutate(
+    cum_pop_1 = cumsum(pop_at_risk),
+    cum_pop = cumsum(pop_at_risk) / total_popatrisk_1549_bothsexes_country,
+    impact_pop_1 = cumsum(infections_expected),
+    impact_pop = cumsum(infections_expected) / total_inf_1549_bothsexes_country,
+    label = ifelse(pt == min(pt), country, NA)
+  ) %>%
+  dplyr::select(iso3, area_id, cum_pop, impact_pop, pt, label) %>%
+  ggplot(aes(x = pt, y = impact_pop * 100, color = iso3, group = iso3, label = label)) +
+  geom_line(size = 1) +
+  geom_vline(xintercept = 130, linetype = 2, color="red") +
+  geom_vline(xintercept = 40, linetype = 2, color="darkred") +
+  ggrepel::geom_text_repel(max.overlaps = Inf, size = 5, show.legend = FALSE) +
+  #ggrepel::geom_text_repel(max.overlaps = 10, size = 5, show.legend = FALSE) +
+  scale_x_continuous(trans = "reverse", breaks = seq(0, 300, 20), limits = c(320, -25), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_color_viridis(discrete = TRUE, na.value = "grey90", drop = FALSE) +
+  labs(
+    x = "Price threshold ($/person/year)",
+    y = "Cumulative (%)",
+    tag = "B"
+  ) +
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position="none",
+    panel.border = element_blank(),               # remove full box
+    axis.line = element_line(color = "black"),    # keep X and Y axis lines
+    axis.ticks = element_line(color = "black"),   # keep ticks (optional)
+    axis.text = element_text(color = "black"),    # ensure text is still visible
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# # Combine plots with tight layout
+# p <- plot_map_inc_pt100_1524F + plot_price_target +
+#   plot_layout(ncol = 2, widths = c(1.2, 3)) & 
+#   theme(plot.margin = margin(5, 5, 5, 5))
+# 
+# p # ← return plot object with embedded internal tags
+
+library(cowplot)
+
+combined_plot <- cowplot::plot_grid(
+  plot_map_inc_pt100_1524F,
+  plot_price_target,
+  ncol = 2,
+  align = "h",
+  rel_widths = c(1.2, 3)
+)
+
+combined_plot
+```
+
+```{r risk distributions, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 4.** (A) Continuous risk distribution from a Gamma function.  The mean incidence for each curve is 10/1000py, (B) Cumulative infections averted under various targeting scenarios.",fig.width=20, fig.height=10}
+
+library(patchwork)
+
+# Plot A: Risk distribution
+risk_hist <- ggplot(riskhist, aes(x = x, color = as.factor(shape), group = shape)) +
+  geom_density(alpha = 0.25, adjust = 2, linewidth = 2, show.legend = FALSE) +  # suppress duplicate legend
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  scale_x_continuous(limits = c(0, 40), breaks = seq(0, 50, 10), expand = c(0, 0)) +
+  labs(x = "risk (per 1000 py)", color = "Shape (risk heterogeneity)") +
+  theme_bw(base_size = 24) +
+  labs(tag = "A") +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.background = element_blank(),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# Plot B: Cumulative infections averted
+cum_inf_by_risk_dist <- risk_dist %>%
+  pivot_longer(cols = total_infected_in_sample:pt, names_to = "metric", values_to = "value") %>%
+  filter(shape < 100, inc_full_pop == 10, metric %in% c("inf_averted_pct")) %>%
+  ggplot(aes(x = (1 - quant_target) * 100, y = value * 100, group = shape, color = factor(shape))) +
+  geom_point(show.legend = FALSE) +  # suppress duplicate legend
+  geom_smooth(span = 1, se = FALSE, size = 1.5) +
+  labs(tag = "B") +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  labs(
+    x = "cumulative % of population (high to low risk)",
+    y = "cumulative infections (%)",
+    color = "Shape (risk heterogeneity)"
+  ) +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme_bw(base_size = 24) +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.background = element_blank()
+  )
+
+combined_plot <- cowplot::plot_grid(
+  risk_hist + cum_inf_by_risk_dist +
+  plot_layout(ncol = 2, guides = "collect") & 
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    legend.key.size = unit(0.4, "cm")
+  ))
+
+combined_plot
+```
+
+```{r infections averted by coverage, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 5.** (A) Districts where Len would avert 25% of infections with 5% coverage among the population at risk with the highest incidence (B) Cumulative percent of infections averted with increasingly inclusive population at risk (age and sex stratified). Black triangles indicate coverage and impact estimates of a len implementation strategy from Wu et al, an individual-based transmission model from South Africa in which Len is allocated to the highest risk populations (namely FSW, their clients and AGYW with 2+ sex partners).  In this model a 1% coverage of Len resulted in a 12% reduction in incidence, and a 3 % coverage resulted in a 20% reduction.", fig.width=25, fig.height=10}
+
+library(patchwork)
+library(ggrepel)
+
+#age_group_selection <- "15-49"
+#sex_selection <- "female"
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+iso3_levels <- sort(iso3_selection)  # or hardcode if needed
+iso3_colors <- setNames(viridis(length(iso3_levels)), iso3_levels)
+
+iso3_selection <- c("ZAF")
+
+naomi_total_1549 <- as.data.frame(naomi_ssa_shp_m) %>%
+  filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+  group_by(iso3) %>%
+  summarise(total_inf = sum(infections_expected),
+            total_popatrisk = sum(pop_at_risk))
+
+# naomi_total_1549 <- as.data.frame(naomi_ssa_shp_m) %>%
+#   filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+#   summarise(total_inf = sum(infections_expected),
+#             total_popatrisk = sum(pop_at_risk))
+
+# Plot B: Line plot with tag
+inc_curve <- naomi_ssa_shp_m %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  #filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  filter(sex!="both",age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  #group_by(country) %>%
+  #arrange(country, -incidence) %>%
+  arrange(-incidence) %>%
+  inner_join(naomi_total_1549, by = join_by(iso3)) %>%
+  #mutate(total_popatrisk=naomi_total_1549$total_popatrisk, total_inf =naomi_total_1549$total_inf) %>%
+  #group_by(country) %>%
+  mutate(
+    cum_pop_1 = cumsum(pop_at_risk),
+    cum_pop = cumsum(pop_at_risk) / total_popatrisk,
+    impact_pop_1 = cumsum(infections_expected),
+    impact_pop = cumsum(infections_expected) / total_inf,
+    id = "average_risk"
+    #label = ifelse(pt == min(pt), country, NA)
+  )  %>%
+  dplyr::select(iso3, pop_at_risk, cum_pop, impact_pop, area_id, id) %>%
+  filter(impact_pop <= 1) #set which parts of the plot to show
+
+iso3_labels <- inc_curve %>%
+  group_by(iso3) %>%
+  slice_min(cum_pop, with_ties = FALSE) %>%
+  ungroup()
+
+inc_curve_risk_added <- risk_dist_targeting_fine_scale %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  #filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  filter(sex!="both",age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  mutate(pop_at_risk = pop_subsample, id = "risk_group") %>%
+  #group_by(country) %>%
+  #arrange(country, -incidence) %>%
+  arrange(-inc_in_sample) %>%
+  inner_join(naomi_total_1549, by = join_by(iso3)) %>%
+  #mutate(total_popatrisk=naomi_total_1549$total_popatrisk, total_inf =naomi_total_1549$total_inf) %>%
+  #group_by(country) %>%
+  mutate(
+    cum_pop_1 = cumsum(pop_subsample ),
+    cum_pop = cumsum(pop_subsample ) / total_popatrisk,
+    impact_pop_1 = cumsum(infections_averted ),
+    impact_pop = cumsum(infections_averted ) / total_inf
+    #label = ifelse(pt == min(pt), country, NA)
+  )  %>%
+  dplyr::select(iso3, pop_at_risk, cum_pop, impact_pop, area_id, id) %>%
+  filter(impact_pop <= 0.25) #set which parts of the plot to show
+
+inc_curve_merged = rbind(inc_curve, inc_curve_risk_added)
+
+iso3_labels <- inc_curve %>%
+  group_by(iso3) %>%
+  slice_min(cum_pop, with_ties = FALSE) %>%
+  ungroup()
+
+library(RColorBrewer)
+
+iso3_levels <- sort(iso3_selection)  # or hardcode if needed
+iso3_colors <- setNames(viridis(length(iso3_levels)), iso3_levels)
+
+#iso3_colors["ZAF"]
+  
+plot_inc_curve <- inc_curve %>%
+  ggplot(aes(x = cum_pop * 100, y = impact_pop * 100)) +
+  geom_point(aes(size = pop_at_risk, alpha = 0.0001), color = "#7AD151FF") +
+  #scale_color_manual(values = "7AD151FF", drop = FALSE) +
+  #scale_color_manual(values = iso3_colors["ZAF"]) +
+  geom_abline(intercept = 0, slope = 1) + # Adds a y=x line
+  #geom_vline(xintercept = 25, linetype = 2) +
+  #ylim(0,100)+ xlim(0,11)+
+  ylim(0,100)+ xlim(0,100)+
+  geom_text_repel(
+  data = iso3_labels,
+  aes(x = cum_pop * 100, y = impact_pop * 100, label = iso3),
+  size = 4,
+  max.overlaps = 15,
+  show.legend = FALSE
+)+
+  scale_size(range = c(1, 50)) +
+  labs(
+    x = "Coverage (%)",
+    y = "Cumulative (%)",
+    tag = "B",
+    color = "Country"  # Legend title for iso3
+  ) +
+  guides(
+  size = "none",
+  alpha = "none",
+  color = guide_legend(
+    title = "Country",              # optional, change legend title
+    override.aes = list(size = 5)   # make legend dots bigger
+  )
+)+
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position = c(0.98, 0.02),    # bottom right inside plot (relative coords)
+    legend.justification = c("right", "bottom"),
+    legend.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+ plot_inc_curve_risk_added <- inc_curve_merged %>%
+  #filter(id=="average_risk") %>%
+  ggplot(aes(x = cum_pop * 100, y = impact_pop * 100)) +
+   geom_point(aes(size = pop_at_risk, alpha = 0.0001), color = "#7AD151FF") +
+  geom_point(data=data.frame(x=c(1.6,3.2)),y=c(12.3,21.2), aes(x=x,y=y), size=5, shape=17) +
+  #scale_color_manual(values = iso3_colors, drop = FALSE) +
+  scale_x_continuous(seq(0,100,10)) + scale_y_continuous(seq(0,100,10)) +
+  #scale_color_manual(values = iso3_colors["ZAF"]) +
+  geom_abline(intercept = 0, slope = 1) + # Adds a y=x line
+  #geom_vline(xintercept = 0.05890*100, linetype = 2) +
+  ylim(0,30)+ xlim(0,11)+
+  #ylim(0,103)+ xlim(0,100)+
+  scale_size(range = c(1, 50)) +
+  labs(
+    x = "Len coverage (%)",
+    y = "Cumulative infections targeted (%)",
+    tag = "B",
+    color = "Country"  # Legend title for iso3
+  ) +
+  guides(
+  size = "none",
+  alpha = "none",
+  color = guide_legend(
+    title = "Country",              # optional, change legend title
+    override.aes = list(size = 5)   # make legend dots bigger
+  )
+)+
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position = c(0.98, 0.02),    # bottom right inside plot (relative coords)
+    legend.justification = c("right", "bottom"),
+    legend.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )  
+ 
+ 
+ #area_idx <- unique(inc_curve_merged$area_id[inc_curve_merged$impact_pop<=0.25 & inc_curve_merged$id=="average_risk"])
+ area_idx <- unique(inc_curve_merged$area_id[inc_curve_merged$impact_pop<=0.25 & inc_curve_merged$id=="risk_group"])
+ length(area_idx)
+ 
+ # Plot A: Map with tag inside
+plot_map_inc <- ggplot() +
+  #geom_sf(data = naomi_ssa_shp_m, fill = NA, color = NA) +  # invisible full bounding box
+  geom_sf(data = naomi_ssa_shp_m %>%
+            filter(age_group_label == "15-24" & sex == "female" & iso3 %in% iso3_selection),
+          aes(fill = inc_cat), show.legend = TRUE) +
+  geom_sf(data = naomi_ssa_shp_m %>%
+            filter(area_id %in% area_idx),
+          fill = NA, color = "red", linewidth = 0.75, show.legend = FALSE) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(
+    fill = "Incidence\n(per 1000py)",
+    tag = "A"
+  ) +
+  theme_void(base_size = 20) +
+  theme(
+    legend.position = c(0.15, 0.80),
+    legend.title = element_text(size = 14),     # bigger title
+    legend.text = element_text(size = 12),      # bigger labels
+    legend.key.size = unit(0.5, "cm")           # bigger colored boxes
+  )
+
+library(cowplot)
+library(patchwork)
+
+combined_plot <- plot_map_inc + plot_inc_curve_risk_added +
+  plot_layout(widths = c(2.5, 3))
+
+# combined_plot <- cowplot::plot_grid(
+#   plot_map_inc,
+#   plot_inc_curve_risk_added,
+#   ncol = 2,
+#   align = "h",
+#   rel_widths = c(2.5, 3)
+# )
+
+combined_plot
+```
+
+```{r pt and cd averted box plots, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 6.** Distribution of price tresholds (A) and costs per DALY averted (B) for all districts in South Africa among women 15-24 by the incidence of the PrEP-allocated group relative to the average district-level incidence. In in the group with >2 times the incidence as the district average, PrEP would be cost effective in all districts at $130/p/yr, and would be cost-saving (<$0/DALY averted) in almost all districts",fig.width=20, fig.height=10}
+
+library(patchwork)
+
+sex_selection = "female"
+age_group_selection = "15-24"
+
+# Plot A: Risk distribution
+boxplot1 <- risk_dist_targeting_fine_scale %>%
+  arrange(inc_in_sample) %>%
+  mutate(
+    quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+    inc_mult_group = cut(
+      inc_mult,
+      breaks = c(0, 0.5, 1, 2, Inf),
+      right = FALSE,
+      labels = c("≤0.5", "0.5–1", "1–2", ">2")
+    )
+  ) %>%
+  filter(
+    iso3 %in% iso3_selection,
+    !is.na(inc_mult_group),
+    sex == sex_selection,
+    age_group_label == age_group_selection,
+    quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+  ) %>%
+  ggplot(aes(x = inc_mult_group, y = pt, group = inc_mult_group, color = inc_mult_group)) +
+  geom_boxplot(position = position_dodge(1), outlier.shape = NA, size = 1) +
+  geom_hline(yintercept = 130, linetype = 2) +
+  geom_hline(yintercept = 40, linetype = 2, color="red") +
+  labs(x = "Incidence relative to district average", y = "Price threshold ($)", tag = "A") +
+  theme_bw(base_size = 22) +
+  guides(colour = guide_legend(nrow = 1)) +
+  theme(
+    legend.position = "none",
+    legend.title = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.background = element_blank(),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# Plot B: Cumulative infections averted
+boxplot2 <- risk_dist_targeting_fine_scale %>%
+  arrange(inc_in_sample) %>%
+  mutate(
+    quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+    inc_mult_group = cut(
+      inc_mult,
+      breaks = c(0, 0.5, 1, 2, Inf),
+      right = FALSE,
+      labels = c("≤0.5", "0.5–1", "1–2", ">2")
+    )
+  ) %>%
+  filter(
+    age_group_label == age_group_selection,
+    sex == sex_selection,
+    iso3 %in% iso3_selection,
+    !is.na(inc_mult_group),
+    quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+  ) %>%
+  ggplot(aes(x = inc_mult_group, y=cdaverted,group=inc_mult_group,color=factor(inc_mult_group))) + 
+  geom_boxplot(position=position_dodge(1),outlier.shape=NA,size=1) +
+  geom_hline(yintercept=0, linetype=2) +
+  #scale_x_continuous(trans = "reverse", breaks=seq(0,700,50), limits=c(300,0)) +
+  scale_y_continuous(limits=c(-500,2000)) +
+  labs(x = "Incidence relative to district average", y = "Cost per DALY averted ($)", tag="B") +
+  #facet_grid(~quant_target)+
+  theme_bw(base_size = 22) +
+  guides(colour = guide_legend(nrow = 1)) +
+  theme(legend.position="none",legend.title=element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+
+combined_plot <- cowplot::plot_grid(
+  boxplot1 + boxplot2 +
+  plot_layout(ncol = 2, guides = "collect") & 
+  theme(
+    legend.position = "none",
+    legend.title = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    legend.key.size = unit(0.4, "cm")
+  ))
+
+combined_plot
+```
+
+```{r universal vs targeting maps, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 7** Cost-effectiveness strategy with highest risk versus average risk uptake.",fig.width=40, fig.height=30}
+
+library(patchwork)
+
+
+plot1_data <- naomi_ssa_shp_m %>%
+  filter(iso3 == "ZAF", age_group_label %in% c("15-19","20-24", "25-34", "35-49"), sex != "both") %>%
+  mutate(target = ifelse(cd < 500, "Universal", "Targeted"),
+         allocation_type = "average risk",
+         quant_target = 0) %>%
+  dplyr::select(area_id, target, allocation_type, sex, age_group_label)
+  
+plot2_data <- naomi_ssa_shp_m %>%
+  filter(iso3 == "ZAF", age_group_label %in% c("15-19","20-24", "25-34", "35-49"), sex != "both") %>%
+  dplyr::select(area_id, geometry) %>%
+  right_join(risk_dist_targeting_fine_scale, by = join_by(area_id)) %>%
+  filter(
+    quant_target == 0.875,
+    age_group_label %in% c("15-19","20-24", "25-34", "35-49"),
+    sex != "both"
+  ) %>%
+  mutate(target = ifelse(cdaverted < 500, "Universal", "Targeted"),
+         allocation_type = "higher risk") %>%
+  dplyr::select(area_id, target, allocation_type, sex, age_group_label)
+
+plot_data <- rbind(plot1_data, plot2_data)
+
+library(ggh4x)
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+
+# 1) Make sure age order is what you want
+age_levels <- c("15-19","20-24","25-34","35-49")
+plot_data <- plot_data %>% mutate(age_group_label = factor(age_group_label, levels = age_levels))
+
+# 2) A small helper to build one row of ages (keeps your exact styling)
+make_age_row <- function(df_subset) {
+  ggplot(df_subset) +
+    geom_sf(aes(fill = factor(target)), color = "black", show.legend = TRUE) +
+    facet_nested(
+      rows = vars(sex),
+      cols = vars(age_group_label, allocation_type),
+      switch = "y",
+      nest_line = TRUE
+    ) +
+    coord_sf(datum = NA) +
+    labs(fill = "Allocation strategy") +
+    scale_fill_manual(values = c("Universal" = "#1b9e77", "Targeted" = "#cc6677")) +
+    theme_void(base_size = 40) +
+    theme(
+      strip.placement = "outside",
+      strip.text.x = element_text(size = 34, margin = margin(b = 20)),
+      strip.text.y.left = element_text(angle = 90, vjust = 0.5, size = 34, margin = margin(r = 25)),
+      strip.background = element_blank(),               # no grey strip boxes
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      legend.title = element_text(size = 32),
+      legend.text  = element_text(size = 30)
+    )
+}
+
+# 3) Build the two rows: first two ages on top, next two on bottom
+top_ages    <- age_levels[1:2]
+bottom_ages <- age_levels[3:4]
+
+p_top    <- make_age_row(filter(plot_data, age_group_label %in% top_ages))
+p_bottom <- make_age_row(filter(plot_data, age_group_label %in% bottom_ages))
+
+# 4) Stack them -> 2 rows of age groups; allocation types remain side-by-side within each age
+plot_2x2 <- p_top / p_bottom +
+  plot_layout(guides = "collect", heights = c(1, 1)) &  # collect legend once
+  theme(legend.position = "bottom")
+
+plot_2x2 <- p_top / plot_spacer() / p_bottom +
+  plot_layout(heights = c(1, 0.10, 1), guides = "collect") &  # tweak 0.10 to taste
+  theme(legend.position = "bottom")
+
+plot_2x2
+
+
+
+```
+
+# Appendix: Equations
+
+The following equations are used in this analysis:
+
+**1. Number needed to treat (NNT):**\
+$$
+NNT = \frac{1}{e \cdot I \cdot d}
+$$\
+Where:\
+- *e*: efficacy of the intervention\
+- *I*: HIV incidence in the absence of intervention\
+- *d*: duration of protection (in years)
+
+**2. Cost-effectiveness (cost per DALY averted):**\
+$$
+C_d = \frac{(NNT \cdot K - T)}{D}
+$$\
+Where:\
+- *K*: cost per unit of prevention\
+- *T*: lifetime treatment cost of HIV\
+- *D*: DALYs associated with HIV infection
+
+**3. Maximum price per dose (price threshold):**\
+$$
+K_{max} = \frac{T + D \cdot C_d}{NNT}
+$$
+
+**4. Annual infections averted (impact):**\
+$$
+A = I \cdot f \cdot e \cdot Pop \cdot (1 - P)
+$$\
+Where:\
+- *f*: coverage of target population\
+- *P*: HIV prevalence\
+- *Pop*: total population
+
+All calculations were stratified by age, sex, geography, and assumed different prioritization scenarios.
