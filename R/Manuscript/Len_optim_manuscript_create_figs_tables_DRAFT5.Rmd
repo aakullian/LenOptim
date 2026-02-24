@@ -1,0 +1,2539 @@
+---
+output:
+  word_document:
+    fig_caption: true
+    reference_docx: my_template.docx
+  html_document:
+    citation_package: natbib
+    df_print: paged
+    self_contained: false
+fontsize: 11pt
+geometry: "margin=1in"
+bibliography: len_references.bib
+csl: csl/nature.csl
+link-citations: true
+---
+
+```{r setup load libraries, include=FALSE, cache=FALSE}
+
+library(tidyverse)
+library(sf)
+library(raster)
+library(ggplot2)
+library(classInt)
+library(metR)
+library(ggrepel)
+library(viridis)
+library(ggpubr)
+library(ggpattern)
+library(webshot2)
+library(patchwork)
+library(dplyr)
+library(kableExtra)
+library(stringr)
+library(scales)
+library(gt)
+
+#sets the directory to where this script is stored#
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+
+```
+
+```{r setup, include=FALSE, cache=TRUE}
+library(dplyr)
+load("Len_optim_data_FULL_COUNTRY_LIST_v3_Manuscript.RData")
+
+### new code for loading data now found in "Load_Data_for_Manuscript.R"
+
+```
+
+# -------------------------------------------------------------------------
+# Table 2 data sources and construction
+#
+# • Row-level results come from `risk_dist_targeting_fine_scale` (baseline
+#   scenario only), restricted to:
+#     – quant_target ∈ {0.125, 0.375, 0.625, 0.875}
+#     – sex ∈ {female, male}
+#     – age groups 15–24, 25–34, 35–49
+#     – inc_in_sample > 0 (zero-incidence observations excluded)
+#
+# • Each table row summarizes one sex × age group × risk quartile combination,
+#   aggregating across districts.
+#
+# • Coverage and infections-averted values are expressed as percentages of
+#   national South Africa totals (ages 15–49, both sexes), with denominators
+#   computed from `naomi_ssa_shp_m_df`:
+#     – population at risk: sum(pop_at_risk)
+#     – infections: sum(infections_expected)
+#
+# • Incidence, relative incidence, NNT, cost per DALY, and price threshold
+#   columns report mean values across included observations, with min–max
+#   ranges shown in parentheses.
+# -------------------------------------------------------------------------
+
+
+```{r table2, echo=FALSE, message=FALSE}
+
+#table results for South Africa
+naomi_total_1549_ZAF <- naomi_ssa_shp_m_df %>%
+  filter(iso3 %in% "ZAF", age_group_label =="15-49", sex == "both") %>%
+  summarise(total_inf = sum(infections_expected),
+            total_popatrisk = sum(pop_at_risk))
+
+# --- helpers ---
+fmt_inc <- function(x) number(x, accuracy = 0.1)                    # 1 decimal
+fmt_int <- function(x) number(x, accuracy = 1, big.mark = ",")      # 0 decimals + commas
+
+# Prints: mean (range min–max); falls back to just mean if min/max are NA
+combine_triplet_range <- function(df, base, fmt_mean = fmt_int, fmt_minmax = fmt_int) {
+  m  <- df[[paste0("mean_", base)]]
+  mi <- df[[paste0("min_",  base)]]
+  ma <- df[[paste0("max_",  base)]]
+
+  out <- fmt_mean(m)
+  has_both <- !is.na(mi) & !is.na(ma)
+
+  # Only add "(range ...–...)" where both min and max exist
+  out[has_both] <- paste0(
+    fmt_mean(m[has_both]),
+    " (",
+    fmt_minmax(mi[has_both]),
+    "–",
+    fmt_minmax(ma[has_both]),
+    ")"
+  )
+  out
+}
+
+summarise_scenario <- function(data, label) {
+  data %>%
+    filter(quant_target %in% c(0.125,0.375,0.625,0.875), 
+           sex!="both", 
+           age_group_label %in% c("15-24","25-34","35-49"),
+           inc_in_sample > 0) %>%        # <-- NEW LINE: drop zero-inc rows %>%
+    group_by(sex, age_group_label,quant_target) %>%
+    summarise(
+      n_districts_125 = n_distinct(area_id[pt >= 125]),
+      n_districts_55  = n_distinct(area_id[pt >= 55]),
+      len_coverage_mean_pt125       = sum(pop_subsample[pt >= 125]) / naomi_total_1549_ZAF$total_popatrisk,
+      infections_averted_mean_pt125 = sum(infections_averted[pt >= 125]) / naomi_total_1549_ZAF$total_inf,
+      len_coverage_mean_pt55       = sum(pop_subsample[pt >= 55]) / naomi_total_1549_ZAF$total_popatrisk,
+      infections_averted_mean_pt55 = sum(infections_averted[pt >= 55]) / naomi_total_1549_ZAF$total_inf,
+
+      # incidence
+      mean_incidence          = mean(inc_in_sample, na.rm = TRUE),
+      min_incidence           = min(inc_in_sample, na.rm = TRUE),
+      max_incidence           = max(inc_in_sample, na.rm = TRUE),
+
+      # relative incidence (inc_mult)
+      mean_inc_multiplier     = mean(inc_mult, na.rm = TRUE),
+      min_inc_multiplier      = min(inc_mult, na.rm = TRUE),
+      max_inc_multiplier      = max(inc_mult, na.rm = TRUE),
+
+      # nnt, cost per DALY, price threshold
+      mean_nnt                = mean(nnt, na.rm = TRUE),
+      min_nnt                 = min(nnt, na.rm = TRUE),
+      max_nnt                 = max(nnt, na.rm = TRUE),
+
+      mean_cost_per_daly      = mean(cdaverted, na.rm = TRUE),
+      min_cost_per_daly       = min(cdaverted, na.rm = TRUE),
+      max_cost_per_daly       = max(cdaverted, na.rm = TRUE),
+      
+      mean_cost_per_daly_125      = mean(cdaverted_125, na.rm = TRUE),
+      min_cost_per_daly_125       = min(cdaverted_125, na.rm = TRUE),
+      max_cost_per_daly_125       = max(cdaverted_125, na.rm = TRUE),
+
+      mean_price_threshold    = mean(pt, na.rm = TRUE),
+      min_price_threshold     = min(pt, na.rm = TRUE),
+      max_price_threshold     = max(pt, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(scenario = label)
+}
+
+# --- build scenarios ---
+summ_all <- bind_rows(
+  summarise_scenario(risk_dist_targeting_fine_scale,              "baseline"),
+  summarise_scenario(risk_dist_targeting_fine_scale_sensitivity,  "sensitivity (low DALYs & cost)"),
+)
+
+# --- formatted display table ---
+# --- formatted display table ---
+display_tbl <-
+  summ_all %>%
+  transmute(
+    scenario,
+    quant_target, 
+    sex,
+    age_group_label,
+
+    # incidence -> 1 decimal
+    `incidence (per 1000 py)` = combine_triplet_range(
+      ., "incidence",
+      fmt_mean   = fmt_inc,
+      fmt_minmax = fmt_inc
+    ),
+
+    # relative incidence -> also 1 decimal
+    `incidence relative to district average` = combine_triplet_range(
+      ., "inc_multiplier",
+      fmt_mean   = fmt_inc,
+      fmt_minmax = fmt_inc
+    ),
+
+    # integer-style with commas
+    `number needed to treat` = combine_triplet_range(., "nnt"),
+    `cost per DALY ($)`          = combine_triplet_range(., "cost_per_daly"),
+    `cost per DALY at $125pppy ($)`   = combine_triplet_range(., "cost_per_daly_125"),
+    `price threshold ($)`        = combine_triplet_range(., "price_threshold"),
+
+    # counts of districts
+    `n districts with c/e universal allocation @ $125/py` = fmt_int(n_districts_125),
+    `n districts with c/e universal allocation @ $55/py`  = fmt_int(n_districts_55),
+
+    # coverage and infections averted as PLAIN NUMERIC PERCENT (0–100), no "%" formatting
+    `CE len coverage $125 pt`       = len_coverage_mean_pt125       * 100,
+    `CE infections averted $125 pt` = infections_averted_mean_pt125 * 100,
+    `CE len coverage $55 pt`        = len_coverage_mean_pt55        * 100,
+    `CE infections averted $55 pt`  = infections_averted_mean_pt55  * 100,
+
+    # efficiency as a plain numeric ratio (no percent, no formatting)
+    `Len efficiency at $125 pt` = infections_averted_mean_pt125 / 
+      pmax(len_coverage_mean_pt125, .Machine$double.eps),
+    `Len efficiency at $55 pt`  = infections_averted_mean_pt55  / 
+      pmax(len_coverage_mean_pt55,  .Machine$double.eps)
+  ) %>%
+  # now mutate AFTER transmute, on the whole data frame
+  mutate(
+    `Len efficiency at $125 pt` = dplyr::na_if(`Len efficiency at $125 pt`, 0),
+    `Len efficiency at $55 pt`  = dplyr::na_if(`Len efficiency at $55 pt`,  0)
+  ) %>%
+  arrange(scenario, sex, age_group_label, quant_target) %>%
+  # replace underscores with spaces in column names
+  rename_with(~ str_replace_all(., "_", " "))
+
+cost_eff_numbers <- display_tbl %>%
+  relocate(`price threshold ($)`, .after = `number needed to treat`)
+
+# helper to pull a single cell value from cost_eff_numbers (unchanged)
+cell <- function(scenario, qtarget, sex, age, column) {
+  cost_eff_numbers %>%
+    filter(
+      scenario == .data$scenario,
+      `quant target` == qtarget,
+      sex == .data$sex,
+      `age group label` == age
+    ) %>%
+    pull(all_of(column)) %>%
+    pluck(1)
+}
+
+# --- rebuild table2 (baseline only), collapse repeated labels ---
+table2 <- cost_eff_numbers %>%
+  dplyr::filter(scenario == "baseline") %>%
+  dplyr::mutate(
+    # risk quartile label (you can tweak if you want percent signs here; this is just a text label)
+    `risk quartile (%)` = paste0((`quant target` - 0.125) * 100,
+                             " - ",
+                             (`quant target` + 0.125) * 100),
+    `age group` = `age group label`
+  ) %>%
+  dplyr::arrange(scenario, sex, `age group`, `quant target`) %>%
+  dplyr::select(
+    scenario, sex, `age group`, `risk quartile (%)`, everything()
+  ) %>%
+  # collapse repeated sex / age group (scenario is constant == "baseline")
+  dplyr::mutate(
+    show_sex = sex != dplyr::lag(sex),
+    show_age = (`age group` != dplyr::lag(`age group`)) | show_sex,
+    sex       = dplyr::if_else(coalesce(show_sex, TRUE), sex, ""),
+    `age group` = dplyr::if_else(coalesce(show_age, TRUE), `age group`, "")
+  ) %>%
+  dplyr::select(
+    -show_sex,
+    -show_age,
+    -`quant target`,
+    -`age group label`,
+    -scenario
+  ) %>%
+  # Replace zeros in len coverage / infections averted with NA (keeps Inf as-is)
+  dplyr::mutate(
+    across(
+      contains("len coverage") | contains("infections averted"),
+      ~ dplyr::if_else(
+          is.numeric(.) & . == 0,
+          NA_real_,
+          .
+        )
+    )
+  )
+
+# --- Rename $125/$55 columns to base + _55 so we can use spanners cleanly ---
+table2_renamed <- table2 %>%
+  dplyr::rename(
+    # $125 group (base names)
+    `cost per DALY averted ($)` = `cost per DALY at $125pppy ($)`,
+    `n districts with c/e universal allocation`    = `n districts with c/e universal allocation @ $125/py`,
+    `CE len coverage`                              = `CE len coverage $125 pt`,
+    `CE infections averted`                        = `CE infections averted $125 pt`,
+    `Len efficiency`                               = `Len efficiency at $125 pt`,
+    # $55 group (suffix _55)
+    `cost per DALY averted ($)_55`                = `cost per DALY ($)`,
+    `n districts with c/e universal allocation_55` = `n districts with c/e universal allocation @ $55/py`,
+    `CE len coverage_55`                           = `CE len coverage $55 pt`,
+    `CE infections averted_55`                     = `CE infections averted $55 pt`,
+    `Len efficiency_55`                            = `Len efficiency at $55 pt`
+  )
+
+# --- Build a GT table with spanner headers for cost = $125 vs $55 ---
+TABLE2 <- table2_renamed %>%
+  gt() %>%
+  # group columns into two super-headers (spanners)
+  tab_spanner(
+    label = "Cost = $125/py",
+    columns = c(
+      `cost per DALY averted ($)`,
+      `n districts with c/e universal allocation`,
+      `CE len coverage`,
+      `CE infections averted`,
+      `Len efficiency`
+    )
+  ) %>%
+  tab_spanner(
+    label = "Cost = $55/py",
+    columns = c(
+      `cost per DALY averted ($)_55`,
+      `n districts with c/e universal allocation_55`,
+      `CE len coverage_55`,
+      `CE infections averted_55`,
+      `Len efficiency_55`
+    )
+  ) %>%
+  # tidy short labels under each spanner (no % sign in labels)
+  cols_label(
+    `cost per DALY averted ($)`                     = "cost per DALY ($)",
+    `n districts with c/e universal allocation`     = "districts (n)",
+    `CE len coverage`                               = "coverage",
+    `CE infections averted`                         = "infections averted",
+    `Len efficiency`                                = "efficiency",
+    
+    `cost per DALY averted ($)_55`                  = "cost per DALY ($)",
+    `n districts with c/e universal allocation_55`  = "districts (n)",
+    `CE len coverage_55`                            = "coverage",
+    `CE infections averted_55`                      = "infections averted",
+    `Len efficiency_55`                             = "efficiency",
+
+    `age group`                                     = "age group",
+    `risk quartile (%)`                                 = "risk quartile (%)"
+  ) %>%
+  # format numeric columns as plain numbers (0–100 etc.), no "%" symbol
+  fmt_number(
+    columns = c(
+      `CE len coverage`,
+      `CE infections averted`,
+      `CE len coverage_55`,
+      `CE infections averted_55`,
+      `Len efficiency`,
+      `Len efficiency_55`
+    ),
+    decimals = 1
+  ) %>%
+  tab_options(
+    table.font.size = "small",
+    data_row.padding = px(3)
+  )
+
+# --- rebuild table2 (lower DALY sensitivity analysis only), collapse repeated labels ---
+table2_sens <- cost_eff_numbers %>%
+  dplyr::filter(scenario == "sensitivity (low DALYs & cost)") %>%
+  dplyr::mutate(
+    # risk quartile label (you can tweak if you want percent signs here; this is just a text label)
+    `risk quartile (%)` = paste0((`quant target` - 0.125) * 100,
+                             " - ",
+                             (`quant target` + 0.125) * 100),
+    `age group` = `age group label`
+  ) %>%
+  dplyr::arrange(scenario, sex, `age group`, `quant target`) %>%
+  dplyr::select(
+    scenario, sex, `age group`, `risk quartile (%)`, everything()
+  ) %>%
+  # collapse repeated sex / age group (scenario is constant == "baseline")
+  dplyr::mutate(
+    show_sex = sex != dplyr::lag(sex),
+    show_age = (`age group` != dplyr::lag(`age group`)) | show_sex,
+    sex       = dplyr::if_else(coalesce(show_sex, TRUE), sex, ""),
+    `age group` = dplyr::if_else(coalesce(show_age, TRUE), `age group`, "")
+  ) %>%
+  dplyr::select(
+    -show_sex,
+    -show_age,
+    -`quant target`,
+    -`age group label`,
+    -scenario
+  ) %>%
+  # Replace zeros in len coverage / infections averted with NA (keeps Inf as-is)
+  dplyr::mutate(
+    across(
+      contains("len coverage") | contains("infections averted"),
+      ~ dplyr::if_else(
+          is.numeric(.) & . == 0,
+          NA_real_,
+          .
+        )
+    )
+  )
+
+# --- Rename $125/$55 columns to base + _55 so we can use spanners cleanly ---
+table2_sens_renamed <- table2_sens %>%
+  dplyr::rename(
+    # $125 group (base names)
+    `cost per DALY averted ($)` = `cost per DALY at $125pppy ($)`,
+    `n districts with c/e universal allocation`    = `n districts with c/e universal allocation @ $125/py`,
+    `CE len coverage`                              = `CE len coverage $125 pt`,
+    `CE infections averted`                        = `CE infections averted $125 pt`,
+    `Len efficiency`                               = `Len efficiency at $125 pt`,
+    # $55 group (suffix _55)
+    `cost per DALY averted ($)_55`                = `cost per DALY ($)`,
+    `n districts with c/e universal allocation_55` = `n districts with c/e universal allocation @ $55/py`,
+    `CE len coverage_55`                           = `CE len coverage $55 pt`,
+    `CE infections averted_55`                     = `CE infections averted $55 pt`,
+    `Len efficiency_55`                            = `Len efficiency at $55 pt`
+  )
+
+# --- Build a GT table with spanner headers for cost = $125 vs $55 ---
+TABLE2_sens <- table2_sens_renamed %>%
+  gt() %>%
+  # group columns into two super-headers (spanners)
+  tab_spanner(
+    label = "Cost = $125/py",
+    columns = c(
+      `cost per DALY averted ($)`,
+      `n districts with c/e universal allocation`,
+      `CE len coverage`,
+      `CE infections averted`,
+      `Len efficiency`
+    )
+  ) %>%
+  tab_spanner(
+    label = "Cost = $55/py",
+    columns = c(
+      `cost per DALY averted ($)_55`,
+      `n districts with c/e universal allocation_55`,
+      `CE len coverage_55`,
+      `CE infections averted_55`,
+      `Len efficiency_55`
+    )
+  ) %>%
+  # tidy short labels under each spanner (no % sign in labels)
+  cols_label(
+    `cost per DALY averted ($)`                     = "cost per DALY ($)",
+    `n districts with c/e universal allocation`     = "districts (n)",
+    `CE len coverage`                               = "coverage",
+    `CE infections averted`                         = "infections averted",
+    `Len efficiency`                                = "efficiency",
+    
+    `cost per DALY averted ($)_55`                  = "cost per DALY ($)",
+    `n districts with c/e universal allocation_55`  = "districts (n)",
+    `CE len coverage_55`                            = "coverage",
+    `CE infections averted_55`                      = "infections averted",
+    `Len efficiency_55`                             = "efficiency",
+
+    `age group`                                     = "age group",
+    `risk quartile (%)`                                 = "risk quartile (%)"
+  ) %>%
+  # format numeric columns as plain numbers (0–100 etc.), no "%" symbol
+  fmt_number(
+    columns = c(
+      `CE len coverage`,
+      `CE infections averted`,
+      `CE len coverage_55`,
+      `CE infections averted_55`,
+      `Len efficiency`,
+      `Len efficiency_55`
+    ),
+    decimals = 1
+  ) %>%
+  tab_options(
+    table.font.size = "small",
+    data_row.padding = px(3)
+  )
+
+
+```
+
+**Impact and cost-effectiveness of geographic prioritization for delivery of long-acting PrEP in southern and eastern Africa**
+
+**Tables and Figures**
+
+```{r Table 1, echo=FALSE, message=FALSE, warning=FALSE, table.cap="**Table 1.** Model parameters and values used in analysis."}
+
+library(knitr)
+library(kableExtra)
+
+# Example skeleton table
+param_tbl <- data.frame(
+  Parameter = c("Lenacapavir efficacy", 
+                "DALYs associated with an HIV case (discounted)", 
+                "Average lifetime treatment cost (discounted)",
+                "Base cost (and lower estimate) per person per year (pppy) of Lenacapavir", 
+                "Risk heterogeneity shape (k)", 
+                "Risk heterogeneity scale (θ)",
+                "Relative incidence in Len users versus district average"),
+  Value     = c("0.95", 
+                "10 (7.5 in sensitivity analyses)", 
+                "$5,000", 
+                "$125 ($55)",
+                "1",
+                "district incidence / shape",
+                "2 (<0.5, 0.5-1, 1-2, 2+ in sensitivity analyses)"),  # leave blank or fill in
+  Source    = c("Bekker et al., 2024; Kelley et al., 2025", 
+                "Bansi-Matharu et al., 2023", 
+                "Assumed based on aconservative estimate of lifetime ART costs in sub-Saharan Africa", 
+                "Marian Fortunak et al., 2025", 
+                "Anderson and May, 1989", 
+                "Derived",
+                "Calcuated using data from Donnell et al., 2021" )
+)
+
+TABLE1 <- kable(
+  param_tbl,
+  booktabs = TRUE
+)
+
+TABLE1
+
+```
+
+```{r TABLE2, echo=FALSE, message=FALSE, warning=FALSE}
+# kable(
+#   TABLE2,
+#   caption = "**Table 2.** Model results comparing district-level Lenacapavir allocation strategies by age, sex, and risk-group prioritization",
+#   booktabs = TRUE,
+#   linesep = "",
+#   digits = 2
+# )
+
+TABLE2 %>%
+  tab_caption(
+    "**Table 2.** Model results comparing district-level Lenacapavir allocation strategies by age, sex, and risk-group prioritization"
+  )
+
+TABLE2_sens %>%
+  tab_caption(
+    "**Supplemental Table 2.** Sensitivity analysis with lower DALYs per HIV infection (7.5). Model results comparing district-level Lenacapavir allocation strategies by age, sex, and risk-group prioritization"
+  )
+```
+
+```{r Figure 1 infections averted by coverage across districts in all countries, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 1.** (A) District-level incidence (per 1000py) among adults aged 15-49 years, with red highlighted districts indicating where incidence of any age (15-24, 25-34, 35-49) and sex (men and women) group is above 3.8 per 1000py, representing 50% of new infections and 17% of the HIV negative population. (B) Cumulative percent of new infections with increasingly inclusive age and sex stratified HIV negative population. Points are ordered from highest to lowest incidence; color represents country and point size represents the age- and sex-specific HIV negative population size", fig.width=25, fig.height=10, cache=TRUE}
+
+library(patchwork)
+library(ggrepel)
+
+#age_group_selection <- "15-49"
+#sex_selection <- "female"
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+#iso3_selection <- c("ZAF")
+
+naomi_total_1549 <- naomi_ssa_shp_m_df %>%
+  filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+  summarise(total_inf = sum(infections_expected),
+            total_popatrisk = sum(pop_at_risk))
+
+# naomi_total_1549 <- as.data.frame(naomi_ssa_shp_m) %>%
+#   filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+#   summarise(total_inf = sum(infections_expected),
+#             total_popatrisk = sum(pop_at_risk))
+
+# Plot B: Line plot with tag
+inc_curve <- naomi_ssa_shp_m %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  #filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  filter(sex!="both",age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  #group_by(country) %>%
+  #arrange(country, -incidence) %>%
+  arrange(-incidence) %>%
+  #inner_join(naomi_total_1549, by = join_by(iso3)) %>%
+  mutate(
+    total_inf = naomi_total_1549$total_inf,
+    total_popatrisk = naomi_total_1549$total_popatrisk,
+    cum_pop_1 = cumsum(pop_at_risk),
+    cum_pop = cumsum(pop_at_risk) / total_popatrisk,
+    impact_pop_1 = cumsum(infections_expected),
+    impact_pop = cumsum(infections_expected) / total_inf,
+    id = "average_risk"
+    #label = ifelse(pt == min(pt), country, NA)
+  )  %>%
+  dplyr::select(country,iso3, incidence, pop_at_risk, cum_pop, impact_pop, area_id, id)
+
+iso3_labels <- inc_curve %>%
+  group_by(country) %>%
+  slice_min(cum_pop, with_ties = FALSE) %>%
+  ungroup()
+
+library(RColorBrewer)
+
+iso3_levels <- sort(unique(inc_curve$country))  # or hardcode if needed
+# iso3_colors <- setNames(
+#   scales::hue_pal()(length(iso3_levels)),
+#   iso3_levels
+# )
+iso3_colors <- setNames(
+  colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))(length(iso3_levels)),
+  iso3_levels
+)
+
+iso3_colors <- setNames(
+  rev(colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))(length(iso3_levels))),
+  iso3_levels
+)
+
+ pop_idx <- which.min(abs(inc_curve$impact_pop - 0.5))
+ # Get the corresponding pop_at_risk value
+ fiftypctvalue <- inc_curve$cum_pop[pop_idx] * 100 
+  
+plot_inc_curve <- inc_curve %>%
+  ggplot(aes(x = cum_pop * 100, y = impact_pop * 100)) +
+  geom_point(aes(color = country, size = pop_at_risk, alpha = 0.0001)) +
+  scale_color_manual(values = iso3_colors, drop = FALSE) +
+  #scale_color_manual(values = iso3_colors["ZAF"]) +
+  geom_abline(intercept = 0, slope = 1) + # Adds a y=x line
+  geom_vline(xintercept = fiftypctvalue, linetype = 2, color="red") +
+  #ylim(0,100)+ xlim(0,11)+
+  ylim(0,107)+ xlim(0,100)+
+  geom_text_repel(
+  data = iso3_labels,
+  aes(x = cum_pop * 100, y = impact_pop * 100, label = country),
+  size = 5,
+  max.overlaps = 15,
+  show.legend = FALSE
+)+
+  scale_size(range = c(1, 50)) +
+  labs(
+    x = "Coverage (%)",
+    y = "Cumulative (%)",
+    tag = "B",
+    color = "Country"  # Legend title for iso3
+  ) +
+  guides(
+  size = "none",
+  alpha = "none",
+  color = guide_legend(
+    title = "Country",              # optional, change legend title
+    override.aes = list(size = 5)   # make legend dots bigger
+  )
+)+
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position = c(0.98, 0.02),    # bottom right inside plot (relative coords)
+    legend.justification = c("right", "bottom"),
+    legend.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+ area_idx <- unique(inc_curve$area_id[inc_curve$impact_pop<=0.5 & inc_curve$id=="average_risk"])
+ 
+ highriskdisricts <- inc_curve %>% filter(impact_pop<=0.5 & id=="average_risk")
+ min(highriskdisricts$incidence) #district incidence higher than this value accounts for 50% of new infections
+
+ africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+ 
+ # Plot A: Map with tag inside
+plot_map_inc <- ggplot() +
+  #geom_sf(data = naomi_ssa_shp_m, fill = NA, color = NA) +  # invisible full bounding box
+  geom_sf(data = naomi_ssa_shp_m %>%
+            filter(age_group_label == "15-49" & sex == "both" & iso3 %in% iso3_selection),
+          aes(fill = inc_cat), show.legend = TRUE) +
+  geom_sf(data = naomi_ssa_shp_m %>%
+            filter(area_id %in% area_idx),
+          fill = NA, color = "red", linewidth = 0.3, show.legend = FALSE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(
+    fill = "Incidence (adults 15-49)\n(per 1000py)",
+    tag = "A"
+  ) +
+  theme_void(base_size = 20) +
+  theme(
+    legend.position = c(0.15, 0.80),
+    legend.title = element_text(size = 14),     # bigger title
+    legend.text = element_text(size = 12),      # bigger labels
+    legend.key.size = unit(0.5, "cm")           # bigger colored boxes
+  )
+
+
+library(cowplot)
+
+FIGURE1 <- cowplot::plot_grid(
+  plot_map_inc,
+  plot_inc_curve,
+  ncol = 2,
+  align = "h",
+  rel_widths = c(3, 7)
+)
+
+FIGURE1
+FIGURE1B <- plot_inc_curve
+
+```
+
+```{r Figure 2a, echo=FALSE, message=FALSE, warning=FALSE,fig.cap = "**Figure 2.** District-level costing metrics among aduts aged 15-49. (A) Number needed to treat (person-years of PrEP to avert one infection), (B) Cost per DALY averted (at a fully-loaded Lenacapavir price of $55 pppy), (C) Price threshold to achieve cost effectiveness (at $500 per DALY averted) among men and women 15–49 years of age by district.",fig.width=20, fig.height=12, out.width="100%", cache=TRUE}
+
+age_group_selection = "15-49"
+sex_selection="both"
+iso3_selection <- c("ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA")
+
+#incidence (min) of cost effective districts at $55 pppy vs. $125 pppy
+min_inc_125 <- naomi_ssa_shp_m_df %>%
+  filter(age_group_label==age_group_selection, sex==sex_selection, iso3 %in% iso3_selection, pt>125) %>%
+  summarise(mininc = min(incidence, na.rm=TRUE),
+            n_rows = n(),
+    .groups = "drop")
+
+min_inc_125_f1524 <- naomi_ssa_shp_m_df %>%
+  filter(age_group_label=="15-24", sex=="female", iso3 %in% iso3_selection, pt>125) %>%
+  summarise(mininc = min(incidence, na.rm=TRUE),
+            n_rows = n(),
+    .groups = "drop")
+
+min_inc_55 <- naomi_ssa_shp_m_df %>%
+  filter(age_group_label==age_group_selection, sex==sex_selection, iso3 %in% iso3_selection, pt>55) %>%
+  summarise(mininc = min(incidence, na.rm=TRUE),
+            n_rows = n(),
+    .groups = "drop")
+
+min_inc_55_f1524 <- naomi_ssa_shp_m_df %>%
+  filter(age_group_label=="15-24", sex=="female", iso3 %in% iso3_selection, pt>55) %>%
+  summarise(mininc = min(incidence, na.rm=TRUE),
+            n_rows = n(),
+    .groups = "drop")
+
+africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+
+# Plot A
+plot_map_nnt_1549 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = nnt_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "A", fill = "Number needed to treat") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Plot B
+plot_map_cd_1549 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = cdaverted_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "B", fill = "Cost per DALY averted") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Plot C
+plot_map_pt_1549 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = pt_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "C", fill = "Price threshold ($/yr)") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Combine plots (no external tags needed)
+FIGURE2a <- plot_map_nnt_1549 + plot_map_cd_1549 + plot_map_pt_1549 +
+  plot_layout(ncol = 3) &
+  theme(strip.text = element_blank())
+
+age_group_selection = "15-24"
+sex_selection="female"
+iso3_selection <- c("ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA")
+
+africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+
+# Plot A
+plot_map_nnt_F1524 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = nnt_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "A", fill = "Number needed to treat") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Plot B
+plot_map_cd_F1524 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = cdaverted_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "B", fill = "Cost per DALY averted") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Plot C
+plot_map_pt_F1524 <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = pt_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "C", fill = "Price threshold ($/yr)") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Combine plots (no external tags needed)
+FIGURE2b <- plot_map_nnt_F1524 + plot_map_cd_F1524 + plot_map_pt_F1524 +
+  plot_layout(ncol = 3) &
+  theme(strip.text = element_blank())
+
+FIGURE2a
+FIGURE2b
+```
+
+```{r Figure 3, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 3.** District-level incidence among women 15–24 years. Red outline represents districts in which universal offer of Len to young women is cost-effective ($/DALY averted <$500) at a Lenacapavir cost of $125 pppy versus $55 pppy (maroon outlined districts); HIV incidence >1.3 per 1000). (B) Cumulative infections reached by price threshold for each country.",  fig.width=20, fig.height=10, cache=TRUE}
+library(patchwork)
+library(ggrepel)
+
+age_group_selection <- "15-24"
+sex_selection <- "female"
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+
+naomi_ssa_shp_m 
+
+# Plot A: Map with tag inside
+plot_map_inc_pt100_1524F <- naomi_ssa_shp_m %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = inc_cat), show.legend = TRUE) +
+  geom_sf(data = naomi_ssa_shp_m %>%
+            filter(age_group_label == age_group_selection & sex == sex_selection & pt > 55),
+          fill = NA, color = "orange", linewidth = 0.75, show.legend = FALSE) +
+   geom_sf(data = naomi_ssa_shp_m %>%
+            filter(age_group_label == age_group_selection & sex == sex_selection & pt > 125),
+          fill = NA, color = "red", linewidth = 0.75, show.legend = FALSE) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(
+    fill = "Incidence\n(per 1000py)",
+    tag = "A"
+  ) +
+  theme_void(base_size = 20) +
+  theme(
+    legend.position = c(0.20, 0.80),
+    legend.title = element_text(size = 14),     # bigger title
+    legend.text = element_text(size = 12),      # bigger labels
+    legend.key.size = unit(0.5, "cm")           # bigger colored boxes
+  )
+
+naomi_total_1549_by_country <- naomi_ssa_shp_m_df %>%
+  filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+  group_by(iso3) %>%
+  summarise(total_inf_1549_bothsexes_country = sum(infections_expected),
+            total_popatrisk_1549_bothsexes_country = sum(pop_at_risk))
+
+# Plot B: Line plot with tag
+plot_price_target <- naomi_ssa_shp_m %>%
+  as.data.frame() %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  group_by(country) %>%
+  arrange(country, -pt) %>%
+  inner_join(naomi_total_1549_by_country, by = join_by(iso3)) %>%
+  group_by(country) %>%
+  mutate(
+    cum_pop_1 = cumsum(pop_at_risk),
+    cum_pop = cumsum(pop_at_risk) / total_popatrisk_1549_bothsexes_country,
+    impact_pop_1 = cumsum(infections_expected),
+    impact_pop = cumsum(infections_expected) / total_inf_1549_bothsexes_country,
+    label = ifelse(pt == min(pt), country, NA)
+  ) %>%
+  dplyr::select(iso3, area_id, cum_pop, impact_pop, pt, label) %>%
+  ggplot(aes(x = pt, y = impact_pop * 100, color = iso3, group = iso3, label = label)) +
+  geom_line(size = 1) +
+  geom_vline(xintercept = 125, linetype = 2, color="red", size=1) +
+  geom_vline(xintercept = 55, linetype = 2, color="orange",size=1) +
+  ggrepel::geom_text_repel(max.overlaps = Inf, size = 5, show.legend = FALSE) +
+  #ggrepel::geom_text_repel(max.overlaps = 10, size = 5, show.legend = FALSE) +
+  scale_x_continuous(trans = "reverse", breaks = seq(0, 200, 20), limits = c(165, -25), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_color_viridis(discrete = TRUE, na.value = "grey90", drop = FALSE) +
+  labs(
+    x = "Price threshold ($/person/year)",
+    y = "Cumulative (%)",
+    tag = "B"
+  ) +
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position="none",
+    panel.border = element_blank(),               # remove full box
+    axis.line = element_line(color = "black"),    # keep X and Y axis lines
+    axis.ticks = element_line(color = "black"),   # keep ticks (optional)
+    axis.text = element_text(color = "black"),    # ensure text is still visible
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# # Combine plots with tight layout
+# p <- plot_map_inc_pt100_1524F + plot_price_target +
+#   plot_layout(ncol = 2, widths = c(1.2, 3)) & 
+#   theme(plot.margin = margin(5, 5, 5, 5))
+# 
+# p # ← return plot object with embedded internal tags
+
+library(cowplot)
+
+
+FIGURE3 <- cowplot::plot_grid(
+  plot_map_inc_pt100_1524F,
+  plot_price_target,
+  ncol = 2,
+  align = "h",
+  rel_widths = c(1.2, 3)
+)
+
+FIGURE3
+
+```
+
+
+```{r Figure 4 pt and cd averted box plots, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 4.** Distribution of price thresholds (A) and costs per DALY averted at $125/pppy (B) for all districts in South Africa among women 15-24 by the incidence of the PrEP-uptake group relative to the average district-level incidence. Models were run under baseline costing and DALY per HIV infection (light shaded plots) and under a lower cost per HIV infection and DALYs per HIV infection assumptions (darker shaded plots). If Lenacapavir is prioritized to those with >2 times the incidence as the district average, it would be cost effective in all districts at $125/p/yr (with no difference by cost and DALY assumptions), and would be cost-saving (<$0/DALY averted) in almost all districts only under baseline, but not lower, costing assumptions.",fig.width=30, fig.height=10, cache=TRUE}
+
+library(patchwork)
+
+sex_selection = "female"
+age_group_selection = "15-24"
+
+# Plot 1A: Risk distribution
+boxplot1 <- risk_dist_targeting_fine_scale %>%
+  arrange(inc_in_sample) %>%
+  mutate(
+    quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+    inc_mult_group = cut(
+      inc_mult,
+      breaks = c(0, 0.5, 1, 2, Inf),
+      right = FALSE,
+      labels = c("≤0.5", "0.5–1", "1–2", ">2")
+    )
+  ) %>%
+  filter(
+    !is.na(inc_mult_group),
+    sex == sex_selection,
+    age_group_label == age_group_selection,
+    quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+  ) %>%
+  mutate(scenario="baseline")
+
+# Plot 1b: Risk distribution for sensitivity analysis
+boxplot1_sens <- risk_dist_targeting_fine_scale_sensitivity %>%
+  arrange(inc_in_sample) %>%
+  mutate(
+    quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+    inc_mult_group = cut(
+      inc_mult,
+      breaks = c(0, 0.5, 1, 2, Inf),
+      right = FALSE,
+      labels = c("≤0.5", "0.5–1", "1–2", ">2")
+    )
+  ) %>%
+  filter(
+    !is.na(inc_mult_group),
+    sex == sex_selection,
+    age_group_label == age_group_selection,
+    quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+  ) %>%
+  mutate(scenario="low DALY and treatment cost per HIV infection")
+
+boxplot_combined <- rbind(boxplot1, boxplot1_sens) %>%
+  ggplot(aes(
+    x = inc_mult_group,
+    y = pt,
+    fill = inc_mult_group,      # each x factor has its own color
+    alpha = scenario            # scenario changes transparency
+  )) +
+  geom_boxplot(
+    position = position_dodge(width = 0.8),  # side-by-side boxes
+    outlier.shape = NA,
+    size = 1
+  ) +
+  geom_hline(yintercept = 125, linetype = 2) +
+  geom_hline(yintercept = 55, linetype = 2, color = "red") +
+  labs(
+    x = "Incidence relative to district average",
+    y = "Price threshold ($)",
+    tag = "A",
+    fill = "Incidence group",
+    alpha = "Scenario"
+  ) +
+  theme_bw(base_size = 22) +
+  theme(
+    legend.position = "top",
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# # Plot B: Cumulative infections averted
+# boxplot2b <- rbind(boxplot1, boxplot1_sens) %>%
+#   ggplot(aes(x = inc_mult_group, y=cdaverted,group=inc_mult_group,color=factor(inc_mult_group))) + 
+#   geom_boxplot(position=position_dodge(1),outlier.shape=NA,size=1) +
+#   geom_hline(yintercept=0, linetype=2) +
+#   #scale_x_continuous(trans = "reverse", breaks=seq(0,700,50), limits=c(300,0)) +
+#   scale_y_continuous(limits=c(-500,2000)) +
+#   labs(x = "Incidence relative to district average", y = "Cost per DALY averted ($)", tag="B") +
+#   #facet_grid(~quant_target)+
+#   theme_bw(base_size = 22) +
+#   guides(colour = guide_legend(nrow = 1)) +
+#   theme(legend.position="none",legend.title=element_blank(),
+#         panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+#         strip.background = element_blank(),
+#         axis.line = element_line(colour = "black"),
+#         panel.grid.major = element_blank(),
+#         panel.grid.minor = element_blank(),
+#         panel.background = element_blank())
+
+boxplot_combined_cd <- rbind(boxplot1, boxplot1_sens) %>%
+  ggplot(aes(
+    x = inc_mult_group,
+    y = cdaverted,
+    fill = inc_mult_group,      # each x factor has its own color
+    alpha = scenario            # scenario changes transparency
+  )) +
+  geom_boxplot(
+    position = position_dodge(width = 0.8),  # side-by-side boxes
+    outlier.shape = NA,
+    size = 1
+  ) +
+  scale_y_continuous(limits=c(-500,2000)) +
+  geom_hline(yintercept=0, linetype=2, color="red") +
+  geom_hline(yintercept=500, linetype=2) +
+  labs(
+    x = "Incidence relative to district average",
+    y = "Cost per DALY averted ($) at $55 pppy",
+    tag = "B",
+    fill = "Incidence group",
+    alpha = "Scenario"
+  ) +
+  theme_bw(base_size = 22) +
+  theme(
+    legend.position = "top",
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+boxplot_combined_cd_125 <- rbind(boxplot1, boxplot1_sens) %>%
+  ggplot(aes(
+    x = inc_mult_group,
+    y = cdaverted_125,
+    fill = inc_mult_group,      # each x factor has its own color
+    alpha = scenario            # scenario changes transparency
+  )) +
+  geom_boxplot(
+    position = position_dodge(width = 0.8),  # side-by-side boxes
+    outlier.shape = NA,
+    size = 1
+  ) +
+  scale_y_continuous(limits=c(-500,2000)) +
+  geom_hline(yintercept=0, linetype=2, color="red") +
+  geom_hline(yintercept=500, linetype=2) +
+  labs(
+    x = "Incidence relative to district average",
+    y = "Cost per DALY averted ($) at $125 pppy",
+    tag = "C",
+    fill = "Incidence group",
+    alpha = "Scenario"
+  ) +
+  theme_bw(base_size = 22) +
+  theme(
+    legend.position = "top",
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# FIGURE4 <- cowplot::plot_grid(
+#   boxplot_combined + boxplot_combined_cd + boxplot_combined_cd_125 +
+#   plot_layout(ncol = 3, guides = "collect") & 
+#   theme(
+#     legend.position = "none",
+#     legend.title = element_text(size = 24),
+#     legend.text = element_text(size = 24),
+#     legend.key.size = unit(0.4, "cm")
+#   ))
+# FIGURE4
+```
+
+```{r Figure 4b pt and cd averted box plots (now just comparing price points), echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 4.** ",fig.width=20, fig.height=10, cache=TRUE}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+
+sex_selection <- "female"
+age_group_selection <- "15-24"
+
+# -----------------------------
+# Helper to build the two-panel figure from any input df
+# -----------------------------
+make_fig4 <- function(df_in, fig_tag_suffix = "") {
+
+  base_df <- df_in %>%
+    arrange(inc_in_sample) %>%
+    dplyr::mutate(
+      quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+      inc_mult_group = cut(
+        inc_mult,
+        breaks = c(0, 0.5, 1, 2, Inf),
+        right = FALSE,
+        labels = c("≤0.5", "0.5–1", "1–2", ">2")
+      )
+    ) %>%
+    dplyr::filter(
+      !is.na(inc_mult_group),
+      sex == sex_selection,
+      age_group_label == age_group_selection,
+      quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+    )
+
+  # Panel A: Price threshold (pt) — keeps incidence-group legend
+  boxplot_pt <- ggplot(base_df, aes(
+    x = inc_mult_group,
+    y = pt,
+    fill = inc_mult_group
+  )) +
+    geom_boxplot(outlier.shape = NA, size = 1) +
+    geom_hline(yintercept = 125, linetype = 2) +
+    geom_hline(yintercept = 55, linetype = 2, color = "red") +
+    labs(
+      x = "Incidence relative to district average",
+      y = "Price threshold ($)",
+      tag = paste0("A", fig_tag_suffix),
+      fill = "Incidence group"
+    ) +
+    theme_bw(base_size = 22) +
+    theme(
+      legend.position = "none",
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_line(colour = "black"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank()
+    )
+
+  # Long format for cost/DALY at two prices
+  cd_long <- base_df %>%
+    dplyr::select(inc_mult_group, cdaverted, cdaverted_125) %>%
+    tidyr::pivot_longer(
+      cols = c(cdaverted, cdaverted_125),
+      names_to = "price_point",
+      values_to = "cdaverted_value"
+    ) %>%
+    dplyr::mutate(
+      price_point = dplyr::recode(
+        price_point,
+        "cdaverted"     = "$55 pppy",
+        "cdaverted_125" = "$125 pppy"
+      )
+    )
+
+  # Panel B: Cost per DALY averted — alpha legend inside upper-right
+ boxplot_cd <- ggplot(cd_long, aes(
+  x = inc_mult_group,
+  y = cdaverted_value,
+  fill = inc_mult_group,
+  alpha = price_point
+)) +
+  geom_boxplot(
+    position = position_dodge(width = 0.8),
+    outlier.shape = NA,
+    size = 1
+  ) +
+  scale_alpha_manual(values = c("$55 pppy" = 0.35, "$125 pppy" = 0.85)) +
+  scale_y_continuous(limits = c(-500, 2000)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "red") +
+  geom_hline(yintercept = 500, linetype = 2) +
+  labs(
+    x = "Incidence relative to district average",
+    y = "Cost per DALY averted ($)",
+    tag = paste0("B", fig_tag_suffix)
+  ) +
+  theme_bw(base_size = 22) +
+  theme(
+    legend.position = "none",   # no legends shown in this panel
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  ) +
+  guides(
+    fill = "none",  
+    alpha = "none"
+  )
+
+
+
+  # Combine with shared incidence legend at bottom
+  fig <- boxplot_pt + boxplot_cd +
+    plot_layout(ncol = 2, guides = "collect") &
+    theme(
+      legend.position = "none",
+      legend.title = element_text(size = 24),
+      legend.text = element_text(size = 24),
+      legend.key.size = unit(0.6, "cm")
+    )
+
+  fig
+}
+
+# -----------------------------
+# Make baseline + sensitivity replicas
+# -----------------------------
+FIGURE4_base <- make_fig4(risk_dist_targeting_fine_scale, fig_tag_suffix = "")
+FIGURE4_sens <- make_fig4(risk_dist_targeting_fine_scale_sensitivity, fig_tag_suffix = "")
+
+# Print whichever you want in the document:
+FIGURE4_base
+FIGURE4_sens
+
+```
+
+
+
+```{r Figure 5 infections averted by coverage, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 5.** (A) The highest incidence (adult aged 15-49) South African districts containing 25% of the country's new infections and 5% of its HIV negative population (stratified by age and sex). (B) Cumulative percent of new infections within an increasingly inclusive HIV negative population (stratified by age and sex). Black triangles indicate coverage and impact estimates of a Lenacapavir implementation strategy from Wu et al, an individual-based transmission model from South Africa in which Lenacapavir is allocated to the highest risk populations (namely FSW, their clients and AGYW with 2+ sex partners).  In this model, a 1% coverage of Len resulted in a 12% reduction in incidence, and a 3% coverage resulted in a 20% reduction.", fig.width=25, fig.height=10, cache=TRUE}
+
+library(patchwork)
+library(ggrepel)
+
+iso3_selection <- c("ZAF")
+
+naomi_total_1549 <- as.data.frame(naomi_ssa_shp_m) %>%
+  filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+  group_by(iso3) %>%
+  summarise(total_inf = sum(infections_expected),
+            total_popatrisk = sum(pop_at_risk))
+
+# naomi_total_1549 <- as.data.frame(naomi_ssa_shp_m) %>%
+#   filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+#   summarise(total_inf = sum(infections_expected),
+#             total_popatrisk = sum(pop_at_risk))
+
+# Plot B: Line plot with tag
+inc_curve <- naomi_ssa_shp_m %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  #filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  filter(sex!="both",age_group_label %in%  c("15-24","25-34","35-49"), iso3 %in% iso3_selection) %>%
+  #group_by(country) %>%
+  #arrange(country, -incidence) %>%
+  arrange(-incidence) %>%
+  inner_join(naomi_total_1549, by = join_by(iso3)) %>%
+  #mutate(total_popatrisk=naomi_total_1549$total_popatrisk, total_inf =naomi_total_1549$total_inf) %>%
+  #group_by(country) %>%
+  mutate(
+    cum_pop_1 = cumsum(pop_at_risk),
+    cum_pop = cumsum(pop_at_risk) / total_popatrisk,
+    impact_pop_1 = cumsum(infections_expected*0.95),
+    impact_pop = cumsum(infections_expected*0.95) / total_inf,
+    id = "average_risk"
+    #label = ifelse(pt == min(pt), country, NA)
+  )  %>% 
+  dplyr::select(iso3, pop_at_risk, cum_pop, impact_pop, area_id, id) %>%
+  filter(impact_pop <= 1) #set which parts of the plot to show
+
+iso3_labels <- inc_curve %>%
+  group_by(iso3) %>%
+  slice_min(cum_pop, with_ties = FALSE) %>%
+  ungroup()
+
+inc_curve_risk_added <- risk_dist_targeting_fine_scale %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  #filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  #filter(quant_target %in% c(0.125,0.375,0.625,0.875), sex!="both",age_group_label %in%  c("15-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  filter(quant_target %in% c(0.875), sex!="both",age_group_label %in%  c("15-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  mutate(pop_at_risk = pop_subsample, id = "risk_group") %>%
+  #group_by(country) %>%
+  #arrange(country, -incidence) %>%
+  arrange(-inc_in_sample) %>%
+  inner_join(naomi_total_1549, by = join_by(iso3)) %>%
+  #mutate(total_popatrisk=naomi_total_1549$total_popatrisk, total_inf =naomi_total_1549$total_inf) %>%
+  #group_by(country) %>%
+  mutate(
+    cum_pop_1 = cumsum(pop_subsample),
+    cum_pop = cumsum(pop_subsample) / total_popatrisk,
+    impact_pop_1 = cumsum(infections_averted),
+    impact_pop = cumsum(infections_averted) / total_inf
+    #label = ifelse(pt == min(pt), country, NA)
+  )  %>%
+  dplyr::select(iso3, pop_at_risk, cum_pop, impact_pop, area_id, id) %>%
+  filter(impact_pop <= 0.50) #set which parts of the plot to show
+
+inc_curve_merged = rbind(inc_curve, inc_curve_risk_added)
+
+iso3_labels <- inc_curve %>%
+  group_by(iso3) %>%
+  slice_min(cum_pop, with_ties = FALSE) %>%
+  ungroup()
+
+library(RColorBrewer)
+
+#iso3_levels <- sort(iso3_selection)  # or hardcode if needed
+#iso3_colors <- setNames(viridis(length(iso3_levels)), iso3_levels)
+
+iso3_colors["South Africa"]
+  
+plot_inc_curve <- inc_curve %>%
+  ggplot(aes(x = cum_pop * 100, y = impact_pop * 100)) +
+  geom_point(aes(size = pop_at_risk, alpha = 0.0001), color = iso3_colors["South Africa"]) +
+  #scale_color_manual(values = "7AD151FF", drop = FALSE) +
+  #scale_color_manual(values = iso3_colors["ZAF"]) +
+  geom_abline(intercept = 0, slope = 1) + # Adds a y=x line
+  #geom_vline(xintercept = 25, linetype = 2) +
+  #ylim(0,100)+ xlim(0,11)+
+  ylim(0,100)+ xlim(0,100)+
+  geom_text_repel(
+  data = iso3_labels,
+  aes(x = cum_pop * 100, y = impact_pop * 100, label = iso3),
+  size = 4,
+  max.overlaps = 15,
+  show.legend = FALSE
+)+
+  scale_size(range = c(1, 50)) +
+  labs(
+    x = "Coverage (%)",
+    y = "Cumulative (%)",
+    tag = "B",
+    color = "Country"  # Legend title for iso3
+  ) +
+  guides(
+  size = "none",
+  alpha = "none",
+  color = guide_legend(
+    title = "Country",              # optional, change legend title
+    override.aes = list(size = 5)   # make legend dots bigger
+  )
+)+
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position = c(0.98, 0.02),    # bottom right inside plot (relative coords)
+    legend.justification = c("right", "bottom"),
+    legend.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+plot_inc_curve_risk_added <- inc_curve_merged %>%
+  ggplot(aes(x = cum_pop * 100, y = impact_pop * 100)) +
+  geom_point(aes(size = pop_at_risk, color = id, alpha = 0.0001)) +
+  geom_point(
+    data = data.frame(x = c(1.6, 3.2), y = c(12.3, 21.2)), #Wu et al estimates
+    aes(x = x, y = y),
+    size = 6, shape = 7
+  ) +
+  geom_point(
+    data = data.frame(x = c(9.8), y = c(25)),
+    aes(x = x, y = y),
+    size = 6, shape = 8
+  ) +
+  geom_point(
+    data = data.frame(x = c(5,10,15,20), y = c(22.1, 27.4, 32.3, 35.3)), #Kaftan et al estimates
+    aes(x = x, y = y),
+    size = 6, shape = 9
+  ) +
+  geom_abline(intercept = 0, slope = 1) +
+  ylim(0, 50) + xlim(0, 21) +
+  scale_size(range = c(1, 50)) +
+  scale_color_manual(
+    values = c(
+      "average_risk" = "#1f77b4",
+      "risk_group" = "#d62728"
+    ),
+    labels = c(
+      "average_risk" = "Average risk uptake",
+      "risk_group" = ">2x higher risk uptake"
+    )
+  ) +
+  labs(
+    x = "Len coverage (%)",
+    y = "Cumulative infections targeted (%)",
+    tag = "B",
+    color = ""
+  ) +
+  guides(
+    size = "none",
+    alpha = "none",
+    color = guide_legend(
+      title = "",
+      override.aes = list(size = 5)
+    )
+  ) +
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position = c(0.98, 0.02),
+    legend.justification = c("right", "bottom"),
+    legend.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+plot_inc_curve_risk_added <- inc_curve_merged %>%
+  ggplot(aes(x = cum_pop * 100, y = impact_pop * 100)) +
+  geom_point(aes(size = pop_at_risk, color = id), alpha = 0.35) +
+
+  # Wu et al estimates
+  geom_point(
+    data = data.frame(
+      x = c(1.6, 3.2),
+      y = c(12.3, 21.2),
+      estimate = "Wu et al"
+    ),
+    aes(x = x, y = y, shape = estimate),
+    size = 6,
+    color = "black",
+    alpha = 1
+  ) +
+
+  # Single point set
+  geom_point(
+    data = data.frame(
+      x = 9.8,
+      y = 25,
+      estimate = "Jamieson et al"
+    ),
+    aes(x = x, y = y, shape = estimate),
+    size = 6,
+    color = "black",
+    alpha = 1
+  ) +
+
+  # Kaftan et al estimates
+  geom_point(
+    data = data.frame(
+      x = c(5, 10, 15, 20),
+      y = c(22.1, 27.4, 32.3, 35.3),
+      estimate = "Kaftan et al"
+    ),
+    aes(x = x, y = y, shape = estimate),
+    size = 6,
+    color = "black",
+    alpha = 1
+  ) +
+
+  geom_abline(intercept = 0, slope = 1) +
+  ylim(0, 50) + xlim(0, 21) +
+  scale_size(range = c(1, 50)) +
+
+  scale_color_manual(
+    values = c(
+      "average_risk" = "#1f77b4",
+      "risk_group"   = "#d62728"
+    ),
+    labels = c(
+      "average_risk" = "Average risk uptake",
+      "risk_group"   = ">2x higher risk uptake"
+    )
+  ) +
+
+  # Shapes for the estimate point sets (pick whatever you like)
+  scale_shape_manual(
+    values = c(
+      "Wu et al"        = 7,
+      "Jamieson et al"  = 8,
+      "Kaftan et al"    = 9
+    ),
+    name = ""
+  ) +
+
+  labs(
+    x = "Len coverage (%)",
+    y = "Cumulative infections targeted (%)",
+    tag = "B",
+    color = ""
+  ) +
+
+  guides(
+    size = "none",
+    alpha = "none",
+    color = guide_legend(title = "", override.aes = list(size = 5)),
+    shape = guide_legend(title = "", override.aes = list(size = 6, color = "black", alpha = 1))
+  ) +
+
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position = c(0.98, 0.02),
+    legend.justification = c("right", "bottom"),
+    legend.background = element_rect(fill = "white", color = NA),
+    panel.border = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+
+ 
+ #area_idx <- unique(inc_curve_merged$area_id[inc_curve_merged$impact_pop<=0.25 & inc_curve_merged$id=="average_risk"])
+ area_idx <- unique(inc_curve_merged$area_id[inc_curve_merged$impact_pop<=0.50 & inc_curve_merged$id=="risk_group"])
+ #length(area_idx)
+ 
+#  # Plot A: Map with tag inside
+# plot_map_inc <- ggplot() +
+#   #geom_sf(data = naomi_ssa_shp_m, fill = NA, color = NA) +  # invisible full bounding box
+#   geom_sf(data = naomi_ssa_shp_m %>%
+#             filter(age_group_label == "15-24" & sex == "female" & iso3 %in% iso3_selection),
+#           aes(fill = inc_cat), show.legend = TRUE) +
+#   geom_sf(data = naomi_ssa_shp_m %>%
+#             filter(area_id %in% area_idx),
+#           fill = NA, color = "red", linewidth = 0.75, show.legend = FALSE) +
+#   viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+#   labs(
+#     fill = "Incidence\n(per 1000py)",
+#     tag = "A"
+#   ) +
+#   theme_void(base_size = 20) +
+#   theme(
+#     legend.position = c(0.15, 0.80),
+#     legend.title = element_text(size = 14),     # bigger title
+#     legend.text = element_text(size = 12),      # bigger labels
+#     legend.key.size = unit(0.5, "cm")           # bigger colored boxes
+#   )
+
+plot_map_inc <- ggplot() +
+  geom_sf(
+    data = naomi_ssa_shp_m %>%
+      filter(age_group_label == "15-49", sex != "both", iso3 %in% iso3_selection) %>%
+      mutate(highlight = ifelse(area_id %in% area_idx, "highlight", "other")),
+    aes(fill = inc_cat, alpha = highlight),
+    color = "grey60",          # grey outlines around all polygons
+    linewidth = 0.2,           # thin but visible
+    show.legend = TRUE
+  ) +
+  viridis::scale_fill_viridis(
+    option = "G", discrete = TRUE,
+    na.value = "grey90", drop = FALSE, direction = -1
+  ) +
+  scale_alpha_manual(
+    values = c("highlight" = 1, "other" = 0.05),  # highlight bright, others faded
+    guide = "none"
+  ) +
+  #optional: keep the red outline for highlighted districts
+  # geom_sf(
+  #   data = filter(naomi_ssa_shp_m, area_id %in% area_idx),
+  #   fill = NA,
+  #   color = "red",
+  #   linewidth = 0.6,
+  #   show.legend = FALSE
+  # ) +
+  labs(
+    fill = "Incidence\n(per 1000py)",
+    tag = "A"
+  ) +
+  theme_void(base_size = 20) +
+  theme(
+    legend.position = c(0.15, 0.80),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    legend.key.size = unit(0.5, "cm")
+  )
+
+
+
+library(cowplot)
+library(patchwork)
+
+FIGURE5 <- plot_map_inc + plot_inc_curve_risk_added +
+  plot_layout(widths = c(2, 3))
+
+FIGURE5
+
+```
+
+
+```{r Figure 6a universal vs targeting maps, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 6a** Districts in South Africa where a universal allocation strategy would be cost-effective at < $500/DALY (green shaded areas) comparing delivery strategies: uptake among higher risk individuals with >2 times the district average (right panels) versus average risk individuals (left panels).  Results are stratified by age and gender",fig.width=20, fig.height=12.5, cache=TRUE}
+library(patchwork)
+
+age_group_selection = c("15-24","25-34", "35-49")
+
+plot1_data <- naomi_ssa_shp_m %>%
+  filter(iso3 == "ZAF", age_group_label %in% age_group_selection, sex != "both") %>%
+  mutate(target = ifelse(cdaverted < 500, "Universal", "Further risk prioritization needed"),
+         allocation_type = "average risk uptake",
+         quant_target = 0) %>%
+  dplyr::select(area_id, target, allocation_type, sex, age_group_label)
+  
+plot2_data <- naomi_ssa_shp_m %>%
+  filter(iso3 == "ZAF", age_group_label %in% age_group_selection, sex != "both") %>%
+  dplyr::select(area_id, geometry) %>%
+  right_join(risk_dist_targeting_fine_scale, by = join_by(area_id)) %>%
+  filter(
+    quant_target == c(0.875),
+    age_group_label %in% age_group_selection,
+    sex != "both"
+  ) %>%
+  mutate(target = ifelse(cdaverted < 500, "Universal", "Further risk prioritization needed"),
+         allocation_type = "Higher risk uptake (2x district-level)") %>%
+  dplyr::select(area_id, target, allocation_type, sex, age_group_label)
+
+#plot_data <- rbind(plot1_data, plot2_data)
+plot_data <- rbind(plot2_data)
+
+library(ggh4x)
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+
+# 1) Make sure age order is what you want
+age_levels <- age_group_selection
+plot_data <- plot_data %>% mutate(age_group_label = factor(age_group_label, levels = age_levels))
+
+# 2) A small helper to build one row of ages (keeps your exact styling)
+make_age_row <- function(df_subset) {
+  ggplot(df_subset) +
+    geom_sf(aes(fill = factor(target)), color = "black", show.legend = TRUE) +
+    facet_nested(
+      rows = vars(sex),
+      cols = vars(age_group_label),
+      switch = "y",
+      nest_line = TRUE
+    ) +
+    coord_sf(datum = NA) +
+    labs(fill = "Allocation strategy") +
+    scale_fill_manual(values = c("Universal" = "#1b9e77", "Further risk prioritization needed" = "pink")) +
+    theme_void(base_size = 40) +
+    theme(
+  legend.position = "bottom",
+  legend.box.spacing = unit(0.2, "cm")
+) +
+    theme(
+      strip.placement = "outside",
+      strip.text.x = element_text(size = 34, margin = margin(b = 20)),
+      strip.text.y.left = element_text(angle = 90, vjust = 0.5, size = 34, margin = margin(r = 25)),
+      strip.background = element_blank(),               # no grey strip boxes
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      legend.title = element_text(size = 32),
+      legend.text  = element_text(size = 30)
+    )
+}
+
+# 3) Build the two rows: first two ages on top, next two on bottom
+top_ages    <- age_levels[1:3]
+#bottom_ages <- age_levels[3]
+
+p_top    <- make_age_row(filter(plot_data, age_group_label %in% top_ages))
+#p_bottom <- make_age_row(filter(plot_data, age_group_label %in% bottom_ages))
+
+#Stack them -> 2 rows of age groups; allocation types remain side-by-side within each age
+# FIGURE6a <- plot_2x2 <- p_top 
+#   plot_layout(guides = "collect", heights = c(1, 1,1)) &  # collect legend once
+#   theme(legend.position = "bottom")
+
+# FIGURE7 <- p_top  +
+#   plot_layout(heights = c(1, 0.10, 1), guides = "collect") &  # tweak 0.10 to taste
+#   theme(legend.position = "bottom")
+
+#FIGURE6a
+
+#FIGURE6a <- p_top + theme(legend.position = "bottom")
+
+FIGURE6a <- p_top +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+FIGURE6a
+
+```
+
+```{r Figure 6b universal vs targeting maps for $125 pppy, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure 6b** Districts in South Africa where a universal allocation strategy would be cost-effective at < $500/DALY (green shaded areas) comparing delivery strategies: uptake among higher risk individuals with >2 times the district average (right panels) versus average risk individuals (left panels).  Results are stratified by age and gender",fig.width=40, fig.height=25, cache=TRUE}
+library(patchwork)
+
+age_group_selection = c("15-24","25-34", "35-49")
+
+plot1_data <- naomi_ssa_shp_m %>%
+  filter(iso3 == "ZAF", age_group_label %in% age_group_selection, sex != "both") %>%
+  mutate(target = ifelse(cdaverted_125 < 500, "Universal", "Further risk prioritization needed"),
+         allocation_type = "average risk uptake",
+         quant_target = 0) %>%
+  dplyr::select(area_id, target, allocation_type, sex, age_group_label)
+  
+plot2_data <- naomi_ssa_shp_m %>%
+  filter(iso3 == "ZAF", age_group_label %in% age_group_selection, sex != "both") %>%
+  dplyr::select(area_id, geometry) %>%
+  right_join(risk_dist_targeting_fine_scale, by = join_by(area_id)) %>%
+  filter(
+    quant_target == c(0.875),
+    age_group_label %in% age_group_selection,
+    sex != "both"
+  ) %>%
+  mutate(target = ifelse(cdaverted_125 < 500, "Universal", "Further risk prioritization needed"),
+         allocation_type = "Higher risk uptake (2x district-level)") %>%
+  dplyr::select(area_id, target, allocation_type, sex, age_group_label)
+
+#plot_data <- rbind(plot1_data, plot2_data)
+plot_data <- rbind(plot2_data)
+
+library(ggh4x)
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+
+# 1) Make sure age order is what you want
+age_levels <- age_group_selection
+plot_data <- plot_data %>% mutate(age_group_label = factor(age_group_label, levels = age_levels))
+
+# 2) A small helper to build one row of ages (keeps your exact styling)
+make_age_row <- function(df_subset) {
+  ggplot(df_subset) +
+    geom_sf(aes(fill = factor(target)), color = "black", show.legend = TRUE) +
+    facet_nested(
+      rows = vars(sex),
+      cols = vars(age_group_label),
+      switch = "y",
+      nest_line = TRUE
+    ) +
+    coord_sf(datum = NA) +
+    labs(fill = "Allocation strategy") +
+    scale_fill_manual(values = c("Universal" = "#1b9e77", "Further risk prioritization needed" = "pink")) +
+    theme_void(base_size = 40) +
+        theme(
+  legend.position = "bottom",
+  legend.box.margin = margin(t = -10),
+  legend.margin = margin(t = -10),
+  plot.margin = margin(5, 5, 5, 5)
+) +
+    theme(
+      strip.placement = "outside",
+      strip.text.x = element_text(size = 34, margin = margin(b = 20)),
+      strip.text.y.left = element_text(angle = 90, vjust = 0.5, size = 34, margin = margin(r = 25)),
+      strip.background = element_blank(),               # no grey strip boxes
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      legend.title = element_text(size = 32),
+      legend.text  = element_text(size = 30)
+    )
+}
+
+# 3) Build the two rows: first two ages on top, next two on bottom
+top_ages    <- age_levels[1:3]
+#bottom_ages <- age_levels[3]
+
+p_top    <- make_age_row(filter(plot_data, age_group_label %in% top_ages))
+#p_bottom <- make_age_row(filter(plot_data, age_group_label %in% bottom_ages))
+
+#Stack them -> 2 rows of age groups; allocation types remain side-by-side within each age
+# FIGURE6b <- plot_2x2 <- p_top 
+#   plot_layout(guides = "collect", heights = c(1, 1,1)) &  # collect legend once
+#   theme(legend.position = "bottom")
+
+FIGURE6b <- p_top +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+FIGURE6b
+
+
+
+```
+
+**Supplementary figures**
+
+```{r Figure S1 risk distributions, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure S1.** (A) Continuous risk distribution from a Gamma function, varying the shape parameter (0.1, 1, 10), with mean fixed at an incidence of 10/1000py, (B) Cumulative infections averted by increasingly inclusive coverage of the population, from highest to lowest risk)",fig.width=20, fig.height=10, cache=TRUE}
+
+library(patchwork)
+
+#Sweep over heterogeneity and targeting (percentile risk threshold for PrEP offer)
+samplesize = 100000
+inc=0.01
+coverage=1
+shape=1
+quant_target=0.2
+
+n=1
+for(shape in c(0.5,1,10)){
+  #x <- rgamma(n=samplesize, shape=shape, scale=inc/shape) 
+  x <- rnbinom(samplesize, mu = inc*1000, size = shape)
+  x <- round(x,2)
+  x <- as.data.frame(x) %>%
+    mutate(shape=shape)
+  df1=x
+  if(n==1){df2<-df1}else(df2<-rbind(df1,df2))
+  n=2
+}
+riskhist <- df2
+
+n=1
+for (inc in c(0.01)){
+  for(shape in c(0.5,1,10)){
+    for(quant_target in seq(0,0.95,0.05)){
+      #x <- rgamma(n=samplesize, shape=shape, scale=inc/shape) 
+      x <- rnbinom(samplesize, mu = inc*1000, size = shape)
+      #x <- round(x*1000,2)
+      pop = as.data.frame(x)
+      pop$cost_target = x/mean(x) #cost is proportional to the mean incidence 
+      pop$infected = ifelse(runif(nrow(pop), min=0, max=1000) > pop$x,0,1)
+      total_infections = sum(pop$infected)
+      pop$quantile = rank(pop$x)/nrow(pop)
+      pop <- pop %>%
+        filter(quantile>quant_target) %>% #target prep via a quantile threshold of risk (e.g., <0.1 would target the upper 10% of the risk distribution)
+        #sample_frac(coverage) %>% #percent of population in risk group sampled (set to 1 for select all)
+        summarise(
+          inc_full_pop=inc*1000, #incidence per thousand in the total population
+          total_infected_in_sample=sum(infected), 
+          total_infections=total_infections,
+          inf_averted_pct=total_infected_in_sample/total_infections,
+          population=n(),
+          #cost_per_inf_averted = (population*px)/total_infected_in_sample,
+          #sensitivity=total_infected_in_sample/total_infections, 
+          inc_in_sample = (total_infected_in_sample / population)*1000,
+          #nnt=1/(e*(inc_in_sample/1000)*d),
+          #cost=mean(cost_target),
+          #pt=(tx+daly*cdt)/nnt,
+          shape=shape, quant_target=quant_target)
+      df1=pop
+      if(n==1){df2<-df1}else(df2<-rbind(df1,df2))
+      n=2
+      print(paste("working on inc=",inc,"shape=" ,shape,"quantile=",quant_target))
+    }
+  }
+}
+
+risk_dist = df2
+
+# Plot A: Risk distribution
+risk_hist <- ggplot(riskhist, aes(x = x, color = as.factor(shape), group = shape)) +
+  geom_density(alpha = 0.25, adjust = 2, linewidth = 2, show.legend = FALSE) +  # suppress duplicate legend
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  scale_x_continuous(limits = c(0, 40), breaks = seq(0, 50, 10), expand = c(0, 0)) +
+  labs(x = "risk (per 1000 py)", color = "Shape (risk heterogeneity)") +
+  theme_bw(base_size = 24) +
+  labs(tag = "A") +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.background = element_blank(),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# Plot B: Cumulative infections averted
+cum_inf_by_risk_dist <- risk_dist %>%
+  pivot_longer(cols = total_infected_in_sample:inc_in_sample, names_to = "metric", values_to = "value") %>%
+  filter(inc_full_pop == 10, metric %in% c("inf_averted_pct")) %>%
+  ggplot(aes(x = (1 - quant_target) * 100, y = value * 100, group = shape, color = factor(shape))) +
+  geom_point(show.legend = FALSE) +  # suppress duplicate legend
+  geom_smooth(span = 1, se = FALSE, size = 1.5) +
+  labs(tag = "B") +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  labs(
+    x = "cumulative % of population (high to low risk)",
+    y = "cumulative infections (%)",
+    color = "Shape (risk heterogeneity)"
+  ) +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme_bw(base_size = 24) +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.background = element_blank()
+  )
+
+FIGURES1 <- cowplot::plot_grid(
+  risk_hist + cum_inf_by_risk_dist +
+  plot_layout(ncol = 2, guides = "collect") & 
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    legend.key.size = unit(0.4, "cm")
+  ))
+FIGURES1
+```
+
+```{r Figure S2 fig-age-patterns, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="**Figure S2.** District-level HIV incidence by age relative to 20-24 y/o's among: (A) Women and (B) Men. Loess smooth across all districts indicated with a black dashed curve. Note y-axis is on a log2 scale and axis extents are different", fig.width=15, fig.height=9.5, out.width="100%", cache=TRUE}
+
+library(scales)
+
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+#iso3_selection <- c("MOZ")
+
+iso3_levels <- sort(iso3_selection)  # or hardcode if needed
+iso3_colors <- setNames(viridis(length(iso3_levels)), iso3_levels)
+
+plot_age_dist_female <- naomi_ssa_shp_m %>% 
+  filter(sex=="female", age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  group_by(area_id, sex) %>%
+  mutate(inc_rel_2024=incidence/incidence[age_group_label=="20-24"]) %>%
+  ggplot(aes(x = age_group_label, y = inc_rel_2024,color=iso3)) +
+  geom_point(size=2,alpha=0.5) +
+  geom_line(aes(group=area_id), stat = "smooth", method = loess, span=0.5, size = 1,alpha=0.01) +
+  geom_line(aes(group=1), stat = "smooth", method = loess, span=0.8, size = 2,color="black",linetype=2) +
+  scale_color_manual(values = iso3_colors, drop = FALSE) +
+  #viridis::scale_color_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(x = "Age", y = "Incidence relative to 20-24 age-group") +
+  scale_y_continuous(limits=c(0.4,1.2), trans="log2", labels = label_number(digits = 2))+
+  theme_bw(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        strip.background = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())  
+
+#iso3 %in% c("ZAF","SWZ","LSO","MOZ","ZMB","ZWE")
+
+plot_age_dist_male <- naomi_ssa_shp_m %>% 
+  filter(sex=="male", age_group_label %in%  c("15-19", "20-24", "25-34","35-49"), iso3 %in% iso3_selection) %>%
+  group_by(area_id, sex) %>%
+  mutate(inc_rel_2024=incidence/incidence[age_group_label=="20-24"]) %>%
+  ggplot(aes(x = age_group_label, y = inc_rel_2024,color=iso3)) +
+  geom_point(size=2,alpha=0.5, show.legend = FALSE) +
+  geom_line(aes(group=area_id), stat = "smooth", method = loess, span=0.8, size = 1,alpha=0.05, show.legend = FALSE) +
+  geom_line(aes(group=1), stat = "smooth", method = loess, span=4, size = 2,color="black",linetype=2, show.legend = FALSE) +
+  scale_color_manual(values = iso3_colors, drop = FALSE) +
+  labs(x = "Age", y = "") +
+  scale_y_continuous(trans="log2", labels = label_number(digits = 1))+
+  theme_bw(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=2),
+        strip.background = element_blank(), 
+        legend.position = "side",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1), 
+        legend.title=element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())  
+
+
+#gridExtra::grid.arrange(plot_age_dist_female, plot_age_dist_male, ncol = 2)
+
+p <- plot_age_dist_female + plot_age_dist_male +
+  plot_layout(ncol = 2, guides = "collect") &
+  theme(legend.position = "bottom",legend.direction = "horizontal")
+
+FIGURES2 <- p + plot_annotation(tag_levels = 'A')
+
+FIGURES2
+
+```
+
+```{r Figure S3, echo=FALSE, message=FALSE, warning=FALSE,fig.cap = "**Figure S3.** Sensitivity plot with models run under lower estimates of 15 DALYs per HIV infection and USD 5,000 lifetime treatment cost. (A) Number needed to treat (person-years of PrEP to avert one infection), (B) Cost per DALY averted, (C) Price threshold to achieve cost effectiveness (at $500 per DALY averted) among women 15–24 years of age by district.",fig.width=20, fig.height=12, out.width="100%", cache=TRUE}
+
+age_group_selection = "15-49"
+sex_selection="both"
+iso3_selection <- c("ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA")
+#iso3_selection="ZAF"
+
+#naomi_ssa_shp_m_sensitivity
+
+africa_adm0_cropped_subs <- subset(africa_adm0_cropped, ISO3 %in% iso3_selection)
+
+# Plot A
+plot_map_nnt_F1524 <- naomi_ssa_shp_m_sensitivity %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = nnt_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "A", fill = "Number needed to treat") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Plot B
+plot_map_cd_F1524 <- naomi_ssa_shp_m_sensitivity %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = cdaverted_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "B", fill = "Cost per DALY averted") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Plot C
+plot_map_pt_F1524 <- naomi_ssa_shp_m_sensitivity %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection, iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = pt_cat), show.legend = TRUE) +
+  geom_sf(data = africa_adm0_cropped_subs, color = "black", fill = NA, linewidth = 0.8) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  facet_grid(sex ~ age_group_label, switch = "y") +
+  labs(tag = "C", fill = "Price threshold ($/yr)") +
+  theme_void(base_size = 16) +
+  theme(
+    plot.tag = element_text(size = 18, face = "bold"),
+    plot.tag.position = c(0.05, 0.96),
+    legend.position = c(0.25, 0.85),
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.key.size = unit(0.5, "cm"),
+    legend.spacing.y = unit(0.1, "cm"),
+    legend.margin = margin(1, 1, 1, 1),
+    legend.background = element_blank(),
+    legend.key = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.text = element_blank(),
+    strip.background = element_blank()
+  )
+
+# Combine plots (no external tags needed)
+FIGURES3 <- plot_map_nnt_F1524 + plot_map_cd_F1524 + plot_map_pt_F1524 +
+  plot_layout(ncol = 3) &
+  theme(strip.text = element_blank())
+FIGURES3
+
+```
+
+```{r Figure S4, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure S4.** Sensitivity plot with models run under lower estimates of 15 DALYs per HIV infection and USD 5,000 lifetime treatment cost. (A) District-level incidence among women 15–24 with cost-effective districts outlined in red (at Len cost of $125 / person-year) and red + maroon (at Len cost of $55 / person-year). (B) Cumulative infections averted with increasingly inclusive set of districts (from high to low incidence) by price threshold for each country. Red dashed line indicates $125 / person-year Len cost and maroon dashed line incidicates $55 / person-year Len cost", fig.width=20, fig.height=10, cache=TRUE}
+
+library(patchwork)
+library(ggrepel)
+
+age_group_selection <- "15-24"
+sex_selection <- "female"
+iso3_selection <- c("ZAF", "SWZ", "LSO", "MOZ", "ZWE", "BWA", "MWI", "ZMB", "KEN", "TZA", "UGA")
+
+# Plot A: Map with tag inside
+plot_map_inc_pt100_1524F <- naomi_ssa_shp_m_sensitivity %>%
+  filter(age_group_label == age_group_selection & sex == sex_selection & iso3 %in% iso3_selection) %>%
+  ggplot() +
+  geom_sf(aes(fill = inc_cat), show.legend = TRUE) +
+  geom_sf(data = naomi_ssa_shp_m_sensitivity %>%
+            filter(age_group_label == age_group_selection & sex == sex_selection & pt > 55),
+          fill = NA, color = "orange", linewidth = 0.75, show.legend = FALSE) +
+   geom_sf(data = naomi_ssa_shp_m_sensitivity %>%
+            filter(age_group_label == age_group_selection & sex == sex_selection & pt > 125),
+          fill = NA, color = "red", linewidth = 0.75, show.legend = FALSE) +
+  viridis::scale_fill_viridis(option = "G", discrete = TRUE, na.value = "grey90", drop = FALSE, direction = -1) +
+  labs(
+    fill = "Incidence\n(per 1000py)",
+    tag = "A"
+  ) +
+  theme_void(base_size = 20) +
+  theme(
+    legend.position = c(0.20, 0.80),
+    legend.title = element_text(size = 14),     # bigger title
+    legend.text = element_text(size = 12),      # bigger labels
+    legend.key.size = unit(0.5, "cm")           # bigger colored boxes
+  )
+
+naomi_total_1549_by_country <- as.data.frame(naomi_ssa_shp_m_sensitivity) %>%
+  filter(iso3 %in% iso3_selection, age_group_label =="15-49", sex == "both") %>%
+  group_by(iso3) %>%
+  summarise(total_inf_1549_bothsexes_country = sum(infections_expected),
+            total_popatrisk_1549_bothsexes_country = sum(pop_at_risk))
+
+# Plot B: Line plot with tag
+plot_price_target <- naomi_ssa_shp_m_sensitivity %>%
+  as.data.frame() %>%
+  filter(age_group_label == age_group_selection, sex == sex_selection, iso3 %in% iso3_selection) %>%
+  group_by(country) %>%
+  arrange(country, -pt) %>%
+  inner_join(naomi_total_1549_by_country, by = join_by(iso3)) %>%
+  group_by(country) %>%
+  mutate(
+    cum_pop_1 = cumsum(pop_at_risk),
+    cum_pop = cumsum(pop_at_risk) / total_popatrisk_1549_bothsexes_country,
+    impact_pop_1 = cumsum(infections_expected),
+    impact_pop = cumsum(infections_expected) / total_inf_1549_bothsexes_country,
+    label = ifelse(pt == min(pt), country, NA)
+  ) %>%
+  dplyr::select(iso3, area_id, cum_pop, impact_pop, pt, label) %>%
+  ggplot(aes(x = pt, y = impact_pop * 100, color = iso3, group = iso3, label = label)) +
+  geom_line(size = 1) +
+  geom_vline(xintercept = 125, linetype = 2, color="red",size=1) +
+  geom_vline(xintercept = 55, linetype = 2, color="orange",size=1) +
+  ggrepel::geom_text_repel(max.overlaps = Inf, size = 5, show.legend = FALSE) +
+  #ggrepel::geom_text_repel(max.overlaps = 10, size = 5, show.legend = FALSE) +
+  scale_x_continuous(trans = "reverse", breaks = seq(0, 300, 20), limits = c(165, -25), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_color_viridis(discrete = TRUE, na.value = "grey90", drop = FALSE) +
+  labs(
+    x = "Price threshold ($/person/year)",
+    y = "Cumulative (%)",
+    tag = "B"
+  ) +
+  theme_bw(base_size = 20) +
+  theme(
+    legend.position="none",
+    panel.border = element_blank(),               # remove full box
+    axis.line = element_line(color = "black"),    # keep X and Y axis lines
+    axis.ticks = element_line(color = "black"),   # keep ticks (optional)
+    axis.text = element_text(color = "black"),    # ensure text is still visible
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# # Combine plots with tight layout
+# p <- plot_map_inc_pt100_1524F + plot_price_target +
+#   plot_layout(ncol = 2, widths = c(1.2, 3)) & 
+#   theme(plot.margin = margin(5, 5, 5, 5))
+# 
+# p # ← return plot object with embedded internal tags
+
+library(cowplot)
+
+FIGURES4 <- cowplot::plot_grid(
+  plot_map_inc_pt100_1524F,
+  plot_price_target,
+  ncol = 2,
+  align = "h",
+  rel_widths = c(1.2, 3)
+)
+FIGURES4
+
+```
+
+```{r Figure S5, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "**Figure S5.** Sensitivity anlaysis with models run under lower estimates of 5 DALYs per HIV infection and USD 5,000 lifetime treatment cost. (A) Distribution of price tresholds and (B) costs per DALY averted  for all districts in South Africa among women 15-24 stratified by the risk-strata of the PrEP-allocated group (based on incidence in the risk-strata relative to the average district-level incidence). In the group with >2 times the incidence as the district average, PrEP would be cost effective in all districts at $125/p/yr, and would be cost-saving (<$0/DALY averted) in almost all districts",fig.width=20, fig.height=10, cache=TRUE}
+
+library(patchwork)
+
+sex_selection = "female"
+age_group_selection = "15-24"
+
+# Plot A: Risk distribution
+boxplot1 <- risk_dist_targeting_fine_scale_sensitivity %>%
+  arrange(inc_in_sample) %>%
+  mutate(
+    quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+    inc_mult_group = cut(
+      inc_mult,
+      breaks = c(0, 0.5, 1, 2, Inf),
+      right = FALSE,
+      labels = c("≤0.5", "0.5–1", "1–2", ">2")
+    )
+  ) %>%
+  filter(
+    iso3 %in% iso3_selection,
+    !is.na(inc_mult_group),
+    sex == sex_selection,
+    age_group_label == age_group_selection,
+    quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+  ) %>%
+  ggplot(aes(x = inc_mult_group, y = pt, group = inc_mult_group, color = inc_mult_group)) +
+  geom_boxplot(position = position_dodge(1), outlier.shape = NA, size = 1) +
+  geom_hline(yintercept = 125, linetype = 2) +
+  geom_hline(yintercept = 55, linetype = 2, color="red") +
+  labs(x = "Incidence relative to district average", y = "Price threshold ($)", tag = "A") +
+  theme_bw(base_size = 22) +
+  guides(colour = guide_legend(nrow = 1)) +
+  theme(
+    legend.position = "none",
+    legend.title = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    strip.background = element_blank(),
+    axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+
+# Plot B: Cumulative infections averted
+boxplot2 <- risk_dist_targeting_fine_scale_sensitivity %>%
+  arrange(inc_in_sample) %>%
+  mutate(
+    quantile_target_factor = paste(quant_target - 0.125, "-", quant_target + 0.125),
+    inc_mult_group = cut(
+      inc_mult,
+      breaks = c(0, 0.5, 1, 2, Inf),
+      right = FALSE,
+      labels = c("≤0.5", "0.5–1", "1–2", ">2")
+    )
+  ) %>%
+  filter(
+    age_group_label == age_group_selection,
+    sex == sex_selection,
+    iso3 %in% iso3_selection,
+    !is.na(inc_mult_group),
+    quant_target %in% c(0.125, 0.375, 0.625, 0.875)
+  ) %>%
+  ggplot(aes(x = inc_mult_group, y=cdaverted,group=inc_mult_group,color=factor(inc_mult_group))) + 
+  geom_boxplot(position=position_dodge(1),outlier.shape=NA,size=1) +
+  geom_hline(yintercept=0, linetype=2) +
+  #scale_x_continuous(trans = "reverse", breaks=seq(0,700,50), limits=c(300,0)) +
+  scale_y_continuous(limits=c(-500,2000)) +
+  labs(x = "Incidence relative to district average", y = "Cost per DALY averted ($)", tag="B") +
+  #facet_grid(~quant_target)+
+  theme_bw(base_size = 22) +
+  guides(colour = guide_legend(nrow = 1)) +
+  theme(legend.position="none",legend.title=element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        strip.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+
+FIGURES5 <- cowplot::plot_grid(
+  boxplot1 + boxplot2 +
+  plot_layout(ncol = 2, guides = "collect") & 
+  theme(
+    legend.position = "none",
+    legend.title = element_text(size = 24),
+    legend.text = element_text(size = 24),
+    legend.key.size = unit(0.4, "cm")
+  ))
+#FIGURES5
+```
+
+```{r save all objects, echo=FALSE, message=FALSE, warning=FALSE, cache=FALSE}
+
+# put this near the end of your analysis Rmd
+dir.create("ms_outputs", showWarnings = FALSE)
+
+# name the big objects you DON'T want to save
+# exclude <- c(
+#   "risk_dist_targeting_fine_scale",
+#   "risk_dist_targeting_fine_scale_sensitivity",
+#   "naomi_ssa_shp_m",
+#   "naomi_ssa_shp_m_sensitivity"
+# )
+
+# keep everything else in the workspace
+#keep <- setdiff(ls(envir = .GlobalEnv), exclude)
+
+ms_figs_tables <- c(
+  "FIGURE1","plot_inc_curve",  "FIGURE2a", "FIGURE2b","FIGURE3", "FIGURE4_base", "FIGURE5", "FIGURE6a", "FIGURE6b",
+  "TABLE1", "TABLE2", "TABLE2_sens", 
+  "FIGURES1", "FIGURES2", "FIGURES3", "FIGURES4", "FIGURE4_sens",
+  "cell","cost_eff_numbers"
+)
+
+ms_numbers <- c(
+  "cell","cost_eff_numbers","inc_curve_merged"
+)
+
+#Table 1
+TABLE1 <- gt(param_tbl) %>%
+  tab_options(table.font.size = px(14))
+
+gtsave(TABLE1, "figures/Table1.png", vwidth = 1800, vheight = 1200)
+
+#Table 2
+gtsave(
+  TABLE2,
+  filename  = "Figures/Table2.png",
+  vwidth    = 2000,   # wider viewport
+  vheight   = 1200,   # taller if needed
+  zoom      = 1
+)
+
+#Table S1 Sensitivity analysys
+gtsave(
+  TABLE2_sens,
+  filename  = "Figures/TableS1.png",
+  vwidth    = 2000,   # wider viewport
+  vheight   = 1200,   # taller if needed
+  zoom      = 1
+)
+
+#Figures
+ggsave(
+  "Figures/Figure1.png",
+  FIGURE1,
+  width = 18,
+  height = 8,
+  dpi = 300,
+  bg = "white"
+)
+
+ggsave(
+  "Figures/FIGURE1B.png",
+  FIGURE1B,
+  width = 15,
+  height = 12.5,
+  dpi = 300,
+  bg = "white"
+)
+
+ggsave(
+  filename = "Figures/Figure2a.png",
+  plot     = FIGURE2a,
+  width    = 22,      # inches
+  height   = 11,
+  dpi      = 300,     # publication quality
+  bg = "white"
+)
+
+ggsave(
+  filename = "Figures/Figure2b.png",
+  plot     = FIGURE2b,
+  width    = 22,      # inches
+  height   = 11,
+  dpi      = 300,     # publication quality
+  bg = "white"
+)
+
+ggsave(
+  filename = "Figures/Figure3.png",
+  plot     = FIGURE3,
+  width    = 16,      # inches
+  height   = 8,
+  dpi      = 300,     # publication quality
+  bg = "white"
+)
+
+ggsave(
+  filename = "Figures/Figure4.png",
+  plot     = FIGURE4_base,
+  width    = 18,      # inches
+  height   = 8,
+  dpi      = 300, # publication quality
+  bg = "white"
+)
+
+ggsave(
+  filename = "Figures/Figure5.png",
+  plot     = FIGURE5,
+  width    = 18,      # inches
+  height   = 8,
+  dpi      = 300,     # publication quality
+  bg = "white"
+  )
+
+ggsave(
+  filename = "Figures/Figure6a.png",
+  plot     = FIGURE6a,
+  width    = 20,      # inches
+  height   = 12.5,
+  dpi      = 300,     # publication quality
+  bg = "white"
+  )
+
+ggsave(
+  filename = "Figures/Figure6b.png",
+  plot     = FIGURE6b,
+  width    = 20,      # inches
+  height   = 12.5,
+  dpi      = 300,     # publication quality
+  bg = "white"
+  )
+
+ggsave(
+  filename = "Figures/FigureS2.png",
+  plot     = FIGURES2,
+  width    = 15,      # inches
+  height   = 8,
+  dpi      = 300,     # publication quality
+  bg = "white"
+  )
+
+ggsave(
+  filename = "Figures/FigureS3.png",
+  plot     = FIGURES3,
+  width    = 22,      # inches
+  height   = 11,
+  dpi      = 300,     # publication quality
+  bg = "white"
+  )
+
+ggsave(
+  filename = "Figures/FigureS4.png",
+  plot     = FIGURES4,
+  width    = 16,      # inches
+  height   = 8,
+  dpi      = 300,     # publication quality
+  bg = "white"
+  )
+
+ggsave(
+  filename = "Figures/FigureS5.png",
+  plot     = FIGURE4_sens,
+  width    = 16,      # inches
+  height   = 8,
+  dpi      = 300,     # publication quality
+  bg = "white"
+  )
+
+
+# OPTION A: save as a workspace you can `load()` later
+save(list = ms_figs_tables, file = "len_ms_figs_tables_workspace.RData")
+save(list = ms_numbers, file = "len_ms_numbers_workspace.RData")
+save(naomi_ssa_shp_m_df, file = "naomi_ssa_shp_m_dataframe.RData")
+
+```
+
+**Appendix**
+
+The following equations are used in this analysis:
+
+**1. Number needed to treat (NNT):**\
+$$
+NNT = \frac{1}{e \cdot I \cdot d}
+$$\
+Where:\
+- *e*: efficacy of the intervention\
+- *I*: HIV incidence in the absence of intervention\
+- *d*: duration of protection (in years)
+
+**2. Cost-effectiveness (cost per DALY averted):**\
+$$
+C_d = \frac{(NNT \cdot K - T)}{D}
+$$\
+Where:\
+- *K*: cost per unit of prevention\
+- *T*: lifetime treatment cost of HIV\
+- *D*: DALYs associated with HIV infection
+
+**3. Maximum price per dose (price threshold):**\
+$$
+K_{max} = \frac{T + D \cdot C_d}{NNT}
+$$
+
+**4. Annual infections averted (impact):**\
+$$
+A = I \cdot f \cdot e \cdot Pop \cdot (1 - P)
+$$\
+Where:\
+- *f*: coverage of target population\
+- *P*: HIV prevalence\
+- *Pop*: total population
+
+All calculations were stratified by age, sex, geography, and assumed different prioritization scenarios.
+
+\`\`\`
