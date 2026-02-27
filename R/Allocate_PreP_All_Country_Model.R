@@ -5,20 +5,6 @@
 #sets the directory to where this script is stored#
 setwd(dirname(rstudioapi::getSourceEditorContext()$path))
 
-library(tidyr)
-library(dplyr)
-library(stringr)
-library(readxl)
-library(readr)
-library(janitor)
-library(DT)
-library(sf)
-library(ggplot2)
-library(scales)
-library(patchwork)
-
-
-
 allocate_prep_by_risk_with_stratified_prob <- function(facility_df,
                                                        incidence_df,
                                                        budget,

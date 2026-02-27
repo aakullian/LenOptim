@@ -17,21 +17,19 @@ setwd(dirname(rstudioapi::getSourceEditorContext()$path))
 # Set parameters
 ############################################################################################################
 
-#Set subset varibales and set paramters for new vars
-regions=c("ESA") #ESA, LAC, WCA
-#countries <- c("South Africa","Eswatini","Lesotho","Mozambique",'Zimbabwe',"Botswana","Malawi","Zambia")
-iso3_group <- c("KEN") # options: "ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA"
+#Set geography, age, gender, and risk-groups
+iso3_group <- c("ZAF") # options: "ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA"
 sex_groups = c("female","male") # options: "male","female","both"
 age_groups <- c("15-24","25-34","35-49") #options: "15-19","15-24","15-49","20-24","25-29","25-34","30-34","35-39","35-49","40-44","45-49","50+"
-n_risk_groups = 4 #number of risk groups to sample from a gamma distribution of continuous risk (quantiles)
+n_risk_groups = 12 #number of risk groups to sample from a gamma distribution of continuous risk (quantiles)
 
 #Arguments:
 indicators <- c("HIV incidence","HIV prevalence","Population","infections") #
 e <- 0.95 #efficacy of prevention
 d <- 1 #duration of protection in years
-px=130 #cost per 1 year course (two 6-monthly doses)
-tx=10000 #cost over lifetime of treatment (run using a lower value of $5000 in sensitivity analysis)
-daly=20 #DALYs associated with an HIV infection (run using a lower value of 15 in sensitivity analysis)
+px=55 #cost per 1 year course (two 6-monthly doses)
+tx=5000 #cost over lifetime of treatment (run using a lower value of $5000 in sensitivity analysis)
+daly=10 #DALYs associated with an HIV infection (run using a lower value of 15 in sensitivity analysis)
 cdt=500 #cost per DALY averted threshold
 f=1 #effective coverage (proportion of pop at risk who would take up PrEP)
 
@@ -85,7 +83,7 @@ naomi_ssa_shp_m <- naomi_shp %>%
        pop_at_risk = Population*(1-prevalence),
        inc_cat=cut(incidence*1000,breaks=c(0, 1, 2,3,4,5,10,15,20), labels=c("<1","1-1.9","2-2.9","3-3.9","4-4.9","5-5.9","10-14.9","15-19.9"), right=F), #impact (infections averted)
        nnt=1/(e*incidence*d),nnt_cat=cut(nnt,breaks=c(0,100,200,500,1000,Inf), labels=c("<100","100-199","200-499","500-999","1000+"), right=F), #number needed to treat
-       cd=(nnt*px-tx)/daly, cd_cat=cut(cd,breaks=c(-Inf,0,500,1000,5000,10000,Inf), labels=c("<0","0-499","500-999","1000-4999","5000-9999","10000+"), right=F), #cost effectiveness ($/Daly)
+       cdaverted=(nnt*px-tx)/daly, cdaverted_cat=cut(cdaverted,breaks=c(-Inf,0,500,1000,5000,10000,Inf), labels=c("<0","0-499","500-999","1000-4999","5000-9999","10000+"), right=F), #cost effectiveness ($/Daly)
        ci=nnt*px-tx,
        #bi=, #budget impact
        pt=((tx+daly*cdt)/nnt), pt_cat=cut(pt,breaks=c(0,2.5,10,50,100,200,500),  labels=c("<2.5","<10","<50","<100","<200","<300"), right=F), #price threshold
@@ -214,5 +212,4 @@ objects_to_remove <- setdiff(all_objects, objects_to_keep)
 rm(list = objects_to_remove)
 
 ## Save R data file ##
-#save.image(file = "Len_optim_data_FULL_COUNTRY_LIST_v3.RData")
 save.image(file = paste0("Len_optim_data_",iso3_group,"_", n_risk_groups,"_risk_groups.RData"))

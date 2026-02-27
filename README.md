@@ -5,6 +5,15 @@ This repository contains the core R scripts required to run country-level Lenaca
 The model estimates infections averted, DALYs averted, number needed to treat (NNT), cost per DALY averted, and cost-effectiveness under different geographic and demographic prioritization strategies.
 
 This README is intended for users who wish to run the model for their own country or update assumptions.
+=======
+This document provides descriptions for all major functions used in the LenOptim PrEP allocation pipeline. 
+
+**Primary R scripts:**
+Within R folder:
+1. NAOMI_config_Allocate_PrEP_allcountry_v3.R - creates incidence_df (the incidence input file from NAOMI data)
+2. Allocate_PrEP_Data_Cleaning_All_Country.R - generates a PrEP allocation strategy using incidence_df and facility_df (facilty name, lat/lon, district, previous PrEP capacity, catchment populations by age and gender)
+3. Run_Allocate_PrEP_All_Country - runs Allocate_PrEP_model
+>>>>>>> 28e22c4 (Update core country model scripts and README)
 
 ---
 

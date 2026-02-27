@@ -9,16 +9,16 @@
 setwd(dirname(rstudioapi::getSourceEditorContext()$path))
 
 #Set parameters and run model
-country_iso = "KEN" #options are ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA"
-risk_groups = 8 #options are 4 or 8 risk groups
+country_iso = "ZAF" #options are ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA"
+risk_groups = 4 #options are 4 or 8 risk groups
 age_group_allocation_selection = c("15-24","25-34","35-49") #Restrict eligible groups by age, options are "15-24","25-34","35-49"
-sex_allocation_selection = c("female") #Restrict eligible groups by sex, options are "female", "male"
-coverage_mult = 0.5  #The largest fraction of the target population that can receive Len.  So if set to 0.5, half of the population at risk at a facility or district is allocated Len.  This spreads Len availability to more facilities.
+sex_allocation_selection = c("male","female") #Restrict eligible groups by sex, options are "female", "male"
+coverage_mult = 1  #The largest fraction of the target population that can receive Len.  So if set to 0.5, half of the population at risk at a facility or district is allocated Len.  This spreads Len availability to more facilities.
 min_total_initiations = 0 #Set to zero to allow all facilities / districts to be eligible for Len.  Set higher to restrict to facilities / districts with at least that many initiations in the last year.
-units = 1000000 #Total courses of Len (person-years). Set here if volume is known and set below if budget and price / course is known
-cost_per_unit = 100 #Cost per course of Len in USD
+units = 500000 #Total courses of Len (person-years). Set here if volume is known and set below if budget and price / course is known
+cost_per_unit = 55 #Cost per course of Len in USD
 budget = units * cost_per_unit #Total budget for Len. 
-efficacy = 0.99 #len efficacy
+efficacy = 0.95 #len efficacy
 
 #Load data cleaning code
 source("Allocate_PrEP_Data_Cleaning_All_Country.R", echo=F) 
@@ -41,6 +41,8 @@ outputs <- generate_prep_allocation_outputs(
 #View outputs
 outputs$formatted_map         # view or save the map
 outputs$summary_table         # one-row scenario summary
+write.csv(outputs$summary_table, file=paste("Len_Summary_Table_",coverage_mult*100,"pct_cov",".csv", sep=""), row.names=F)
+
 outputs$result_df             # raw allocation output
 by_district_age_sex <- outputs$by_prov_dist_age_sex %>% 
   filter(rowSums(across(where(is.numeric))) != 0) %>% 
@@ -52,6 +54,6 @@ name= paste("summarytable", coverage_mult*100,"pct", sep="")
 assign(name,   outputs$summary_table)
   
 #Write outputs
-save(outputs, file=paste("LenOutputData",".RData", sep="")) 
+save(outputs, file=paste("LenOutputData_",country_iso,"_",risk_groups,"_risk_groups","_",coverage_mult*100,"%coverage",".RData", sep="")) 
 
 

@@ -10,3 +10,4 @@ R/*
 # And keep the Manuscript folder + all files in it
 !R/Manuscript/
 !R/Manuscript/*
+.Rproj.user

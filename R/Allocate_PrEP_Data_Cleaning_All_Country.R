@@ -5,6 +5,26 @@
 #sets the directory to where this script is stored#
 setwd(dirname(rstudioapi::getSourceEditorContext()$path))
 
+# -------------------------------
+# Load required libraries
+# -------------------------------
+
+# List of required packages
+required_packages <- c(
+  "tidyr", "dplyr", "stringr", "readxl", "readr", "janitor",
+  "DT", "sf", "ggplot2", "scales", "patchwork", "conflicted",
+  "stringi", "fuzzyjoin", "purrr", "data.table","kableExtra"
+)
+
+# Install any packages that are missing
+installed <- required_packages %in% installed.packages()[,"Package"]
+if (any(!installed)) {
+  install.packages(required_packages[!installed])
+}
+
+# Load packages
+lapply(required_packages, library, character.only = TRUE)
+
 library(tidyr)
 library(dplyr)
 library(stringr)
@@ -21,6 +41,8 @@ library(stringi)
 library(fuzzyjoin)
 library(purrr)
 library(data.table)
+library(kableExtra)
+library(viridis)
 
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
@@ -30,37 +52,13 @@ conflict_prefer("filter", "dplyr")
 ############################################################################
 
 ## 1. Load naomi-based analysis output
+file_to_load <- paste0("Len_optim_data_", country_iso, "_", risk_groups, "_risk_groups.RData")
+load(file_to_load)
+obj_name <- paste0("naomi_risk_dist_targeting_", country_iso, "_", risk_groups, "_risk_groups")
+data <- get(obj_name)
+rm(list=obj_name)
 
-if(country_iso == "KEN" & risk_groups == 4){
-  load("Len_optim_data_KEN_4_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
-  data = naomi_risk_dist_targeting_KEN_4_risk_groups
-  rm(naomi_risk_dist_targeting_KEN_4_risk_groups)
-}
-
-if(country_iso == "KEN" & risk_groups == 8){
-  load("Len_optim_data_KEN_8_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
-  data = naomi_risk_dist_targeting_8_risk_groups
-  rm(naomi_risk_dist_targeting_KEN_8_risk_groups)
-}
-
-if(country_iso == "MWI"){
-  load("Len_optim_data_MWI_8_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
-  data = naomi_risk_dist_targeting_MWI_8_risk_groups
-  rm(naomi_risk_dist_targeting_MWI_8_risk_groups)
-}
-
-if(country_iso == "ZAF"){
-  load("Len_optim_data_ZAF_8_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
-  data = naomi_risk_dist_targeting_ZAF_8_risk_groups
-  rm(naomi_risk_dist_targeting_ZAF_8_risk_groups)
-}
-
-if(country_iso == "MOZ"){
-  load("Len_optim_data_MOZ_8_risk_groups.RData")  # loads naomi_ssa_shp_m, prep_uptake_fine_scale, risk_dist_targeting_fine_scale
-  data = naomi_risk_dist_targeting_MOZ_8_risk_groups
-  rm(naomi_risk_dist_targeting_MOZ_8_risk_groups)
-}
-
+## 2. Load naomi shapefile
 district_sf <- naomi_ssa_shp_m %>%
   filter(iso3 == country_iso) %>%
   dplyr::select(iso3, area_id, area_name,geometry) %>%
@@ -72,7 +70,7 @@ district_sf <- naomi_ssa_shp_m %>%
 ############################################################################
 # Clean datasets
 ############################################################################
-# 2. Create a facility dataframe that is a place-holder for analysis of just districts
+# 2. Create a "facility" dataframe that is a place-holder for analysis of just districts
 facility_df <- data.frame(naomi_ssa_shp_m) %>%
   filter(iso3==country_iso, sex != "both", age_group_label %in% c("15-24", "25-34", "35-49", "50+")) %>%
   select(area_id, area_name, sex, age_group_label, pop_at_risk) %>%
