@@ -1,6 +1,9 @@
 # Ignore everything in R by default
 R/*
 
+# Allow specific model data files
+!R/Len_optim_data_KEN_4_risk_groups.RData
+
 # BUT keep these four core scripts
 !R/Allocate_PreP_All_Country_Model.R
 !R/Allocate_PrEP_Data_Cleaning_All_Country.R
