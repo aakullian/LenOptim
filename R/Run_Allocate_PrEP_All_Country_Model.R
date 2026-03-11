@@ -5,27 +5,30 @@
 # 3. Runs model
 ############################################################################################################
 
-#sets the directory to where this script is stored#
-setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+###################################################################################################
+#1. Set parameters:
 
-#Set parameters and run model
-country_iso = "ZAF" #options are ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA"
+country_iso = "ZMB" #options are ZAF","SWZ","LSO","MOZ",'ZWE',"BWA","MWI","ZMB","KEN","TZA","UGA"
 risk_groups = 4 #options are 4 or 8 risk groups
 age_group_allocation_selection = c("15-24","25-34","35-49") #Restrict eligible groups by age, options are "15-24","25-34","35-49"
 sex_allocation_selection = c("male","female") #Restrict eligible groups by sex, options are "female", "male"
-coverage_mult = 1  #The largest fraction of the target population that can receive Len.  So if set to 0.5, half of the population at risk at a facility or district is allocated Len.  This spreads Len availability to more facilities.
+coverage_mult = 0.5  #The largest fraction of the target population that can receive Len.  So if set to 0.5, half of the population at risk at a facility or district is allocated Len.  This spreads Len availability to more facilities.
 min_total_initiations = 0 #Set to zero to allow all facilities / districts to be eligible for Len.  Set higher to restrict to facilities / districts with at least that many initiations in the last year.
 units = 500000 #Total courses of Len (person-years). Set here if volume is known and set below if budget and price / course is known
 cost_per_unit = 55 #Cost per course of Len in USD
-budget = units * cost_per_unit #Total budget for Len. 
+budget = units * cost_per_unit #Total budget for Len. Derived, not to be changed.
 efficacy = 0.95 #len efficacy
+###################################################################################################
 
-#Load data cleaning code
+# 2. Load data cleaning and model code
+
+#sets the directory to where this script is stored#
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
 source("Allocate_PrEP_Data_Cleaning_All_Country.R", echo=F) 
-#load model code
+
+# 3. Run model
 source("Allocate_PreP_All_Country_Model.R", echo=F) #Load model functions
 
-#Run model:
 outputs <- generate_prep_allocation_outputs(
     facility_df = facility_df, #facility data
     incidence_df = incidence_df, #naomi incidence data
