@@ -3,6 +3,7 @@ R/*
 
 # Allow specific model data files
 !R/Len_optim_data_KEN_4_risk_groups.RData
+!R/Len_optim_data_ZMB_8_risk_groups.RData
 
 # BUT keep these four core scripts
 !R/Allocate_PreP_All_Country_Model.R
@@ -14,3 +15,4 @@ R/*
 !R/Manuscript/
 !R/Manuscript/*
 .Rproj.user
+
