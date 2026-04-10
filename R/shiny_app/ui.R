@@ -14,7 +14,7 @@ fluidPage(
         "country",
         "Country",
         choices = SUPPORTED_COUNTRIES,
-        selected = "ZMB"
+        selected = "ZAF"
       ),
 
       numericInput(
@@ -24,6 +24,7 @@ fluidPage(
         min = 1000,
         step = 10000
       ),
+      uiOutput("max_courses_text"),
 
       numericInput(
         "cost_per_course",
@@ -39,14 +40,14 @@ fluidPage(
         "age_groups",
         "Eligible Age Groups",
         choices = AGE_GROUP_OPTIONS,
-        selected = AGE_GROUP_OPTIONS
+        selected = "15-24"
       ),
 
       checkboxGroupInput(
         "sex",
         "Eligible Sex Groups",
         choices = SEX_OPTIONS,
-        selected = SEX_OPTIONS
+        selected = "female"
       ),
 
       hr(),
@@ -105,6 +106,106 @@ fluidPage(
         type = "tabs",
 
         tabPanel(
+          "About",
+          br(),
+          fluidRow(
+            column(10, offset = 1,
+              h3("Lenacapavir PrEP Allocation Optimizer"),
+              p(style = "font-size: 15px; line-height: 1.7;",
+                "This tool optimizes the sub-national allocation of ",
+                "Lenacapavir (Len) for HIV prevention (PrEP) ",
+                "across 11 countries in sub-Saharan Africa. Given a fixed supply of Len courses, ",
+                "it determines which districts, age groups, sex groups, and risk strata should receive ",
+                "allocation to maximize HIV infections averted.",
+                "This model only estimates the short-term, direct impact of HIV PrEP",
+                "and does not include dynamics to estimate secondary infections averted, including mother-to-child",
+                "transmissions."
+              ),
+
+              tags$p(style = "font-size: 14px; font-weight: bold;", "How the Model Works"),
+              tags$ul(style = "font-size: 13px; line-height: 1.8;",
+                tags$li("District-level HIV incidence, prevalence, and population estimates are drawn from the ",
+                        "UNAIDS Naomi model (2024 estimates)."),
+                tags$li("Within each district-, sex-, and age-group individual-level risk heterogeneity is simulated using a ",
+                        "gamma distribution parameterized by the district mean incidence, ",
+                        "then stratified into risk quantiles (1, 4, or 8 groups). ",
+                        "Risk heterogeneity is assumed to be the same across all strata."),
+                tags$li("All population strata across all districts are ranked by descending incidence."),
+                tags$li("Len courses are allocated top-down to the highest-risk strata first, ",
+                        "until the supply is exhausted or the coverage cap is reached in each stratum.")
+              ),
+
+              tags$p(style = "font-size: 14px; font-weight: bold;", "How to Use This Dashboard"),
+              tags$ul(style = "font-size: 13px; line-height: 1.8;",
+                tags$li("Select a country and set the total Len courses available and cost per course."),
+                tags$li("Choose eligible populations by age group and sex."),
+                tags$li("Set within-district risk resolution (1 = district average, 4 or 8 = finer risk targeting). ",
+                        "Then use the slider to restrict allocation to only the highest-risk percentiles if desired."),
+                tags$li("Adjust coverage cap to limit the maximum fraction of any target population that receives Len. ",
+                        "This reflects real-world uptake constraints."),
+                tags$li("Click Run Model to generate results.")
+              ),
+
+              tags$p(style = "font-size: 14px; font-weight: bold;", "Output Tabs"),
+              tags$ul(style = "font-size: 13px; line-height: 1.8;",
+                tags$li("Maps -- Three choropleth maps showing which districts receive Len, ",
+                        "the percentage of the population covered, and the percentage reduction in incidence."),
+                tags$li("Summary -- Key metrics including infections averted, cost-effectiveness, ",
+                        "NNT, PrEP coverage, and the incidence targeting ratio."),
+                tags$li("District Detail -- Allocation breakdown by district, age, and sex (downloadable)."),
+                tags$li("Volume Finder -- An interactive curve showing how many Len courses are needed ",
+                        "to achieve any target incidence reduction. Set a target % and get the required volume and cost."),
+                tags$li("Scenario Comparison -- Save multiple model runs and compare them side by side.")
+              ),
+
+              tags$p(style = "font-size: 14px; font-weight: bold;", "Notes"),
+              p(style = "font-size: 13px;",
+                "The default parameters (women 15-24, 4 risk quantiles, top 25% risk targeted) reflect PrEP uptake assumptions ",
+                "among women offered PrEP without restriction -- i.e., those most likely to initiate and benefit are in the highest ",
+                "risk quartile within their district."
+              ),
+              p(style = "font-size: 13px;",
+                "Within-district risk resolution should be set according to how well Lenacapavir delivery programs can identify ",
+                "and prioritize high-risk groups. If set to 1, the model assumes uptake by the average-risk group, whereas if set to 4, the model ",
+                "can prioritize to smaller groups with higher risk. ",
+                "The risk distribution ",
+                "cutoff restricts the model to only target groups with risk higher than the set threshold. Setting a higher threshold will expand ",
+                "allocation to more geographies and may skip over lower-risk groups in high-risk geographies, resulting in a sub-optimal allocation."
+              ),
+
+              tags$p(style = "font-size: 14px; font-weight: bold;", "Supported Countries"),
+              p(style = "font-size: 13px;",
+                "Botswana, Eswatini, Kenya, Lesotho, Malawi, Mozambique, South Africa, Tanzania, Uganda, Zambia, Zimbabwe"
+              ),
+
+              tags$p(style = "font-size: 14px; font-weight: bold;", "Data Sources"),
+              p(style = "font-size: 13px; line-height: 1.7;",
+                "District-level estimates are from the ",
+                tags$a(href = "https://naomi-spectrum.unaids.org/", target = "_blank",
+                       "UNAIDS Naomi model"),
+                " (naomi3_2024_07_01), which provides subnational HIV incidence, ",
+                "prevalence, and population size estimates for sub-Saharan Africa. Shapefiles are from the ",
+                "Naomi combined subnational dataset (2024)."
+              ),
+
+              tags$p(style = "font-size: 14px; font-weight: bold;", "Reference"),
+              p(style = "font-size: 13px; line-height: 1.7;",
+                "Akullian A, Imai-Eaton JW, Sharma M, Subedar H, O'Brien M, Garnett G. ",
+                tags$em("Health impact and cost-effectiveness of geographically prioritized long-acting PrEP delivery in southern and eastern Africa."),
+                " medRxiv 2026. ",
+                tags$a(href = "https://www.medrxiv.org/content/10.1101/2026.01.01.345396v1", target = "_blank",
+                       "doi:10.1101/2026.01.01.345396v1")
+              ),
+
+              hr(),
+              p(style = "font-size: 12px; color: #888;",
+                "To get started, configure parameters in the sidebar and click 'Run Model', then explore the output tabs."
+              )
+            )
+          )
+        ),
+
+        tabPanel(
           "Maps",
           br(),
           conditionalPanel(
@@ -155,7 +256,7 @@ fluidPage(
         ),
 
         tabPanel(
-          "Dose Finder",
+          "Volume Finder",
           br(),
           conditionalPanel(
             condition = "output.has_dose_curve",

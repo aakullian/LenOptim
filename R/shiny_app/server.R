@@ -8,6 +8,62 @@ function(input, output, session) {
   dose_curve_data <- reactiveVal(NULL)
   scenario_log <- reactiveValues(scenarios = list())
 
+  # --- Cached data loader (updates when country or risk groups change) ---
+  cached_data <- reactive({
+    load_country_data(
+      country_iso = input$country,
+      risk_groups = as.integer(input$risk_groups),
+      data_dir = DATA_DIR
+    )
+  })
+
+  # --- Max eligible courses (updates live as parameters change) ---
+  max_eligible_courses <- reactive({
+    data <- cached_data()
+    if (!is.null(data$error)) return(NULL)
+
+    inc_df <- data$incidence_df
+    rg <- as.integer(input$risk_groups)
+    cov <- input$coverage_cap / 100
+    min_rq <- get_min_risk_quantile()
+    eligible_ages <- input$age_groups
+    eligible_sex <- input$sex
+
+    if (length(eligible_ages) == 0 || length(eligible_sex) == 0) return(0)
+
+    # Filter to eligible strata and sum population
+    eligible_pop <- inc_df %>%
+      mutate(age_clean = recode(age_group_label, "50-99" = "50+")) %>%
+      filter(
+        tolower(sex) %in% tolower(eligible_sex),
+        age_clean %in% eligible_ages | age_group_label %in% eligible_ages,
+        quant_target > min_rq
+      ) %>%
+      summarise(total_pop = sum(pop_subsample, na.rm = TRUE)) %>%
+      pull(total_pop)
+
+    ceiling(eligible_pop * cov)
+  })
+
+  output$max_courses_text <- renderUI({
+    mc <- max_eligible_courses()
+    if (is.null(mc)) {
+      tags$div(style = "color: red; font-size: 12px; margin-top: 3px;",
+               "Data not available for this country/risk group combination.")
+    } else {
+      requested <- input$total_courses
+      color <- if (requested > mc) "red" else "#888"
+      tagList(
+        tags$div(style = paste0("color: ", color, "; font-size: 12px; margin-top: 3px;"),
+                 paste0("Max eligible: ", format(mc, big.mark = ","), " courses")),
+        if (requested > mc)
+          tags$div(style = "color: red; font-size: 11px;",
+                   paste0("(Requested exceeds eligible population by ",
+                          format(requested - mc, big.mark = ","), " courses)"))
+      )
+    }
+  })
+
   # --- Data availability indicator ---
   output$data_availability <- renderUI({
     country <- input$country
@@ -50,7 +106,7 @@ function(input, output, session) {
           "Risk Distribution Cutoff",
           min = 0,
           max = 100,
-          value = 0,
+          value = if (rg == 4) 75 else 0,
           step = step_size,
           post = "%"
         ),
@@ -141,14 +197,8 @@ function(input, output, session) {
       return()
     }
 
-    # Load data
-    withProgress(message = "Loading country data...", value = 0.1, {
-      data <- load_country_data(
-        country_iso = input$country,
-        risk_groups = as.integer(input$risk_groups),
-        data_dir = DATA_DIR
-      )
-    })
+    # Use cached data (already loaded reactively)
+    data <- cached_data()
 
     # Check for errors
     if (!is.null(data$error)) {
@@ -309,14 +359,29 @@ function(input, output, session) {
     country_name <- names(SUPPORTED_COUNTRIES)[SUPPORTED_COUNTRIES == input$country]
     if (length(country_name) == 0) country_name <- input$country
 
-    # Add a label column
+    # Build descriptive label
+    risk_label <- if (as.integer(input$risk_groups) == 1) {
+      "district avg"
+    } else {
+      cutoff <- get_min_risk_quantile() * 100
+      if (cutoff == 0) {
+        paste0(input$risk_groups, " risk groups, all strata")
+      } else {
+        paste0(input$risk_groups, " risk groups, top ", 100 - cutoff, "%")
+      }
+    }
+    age_label <- paste(input$age_groups, collapse = "/")
+    sex_label <- paste(input$sex, collapse = "/")
+
     scenario_row <- results$summary_table %>%
       mutate(
         label = paste0(
           country_name, " | ",
-          input$risk_groups, " risk groups | ",
-          format(input$total_courses, big.mark = ","), " courses | ",
-          input$coverage_cap, "% coverage"
+          format(results$summary_table$total_allocated_units, big.mark = ","), " courses | ",
+          risk_label, " | ",
+          age_label, " ", sex_label, " | ",
+          input$coverage_cap, "% cov | ",
+          input$efficacy * 100, "% eff"
         )
       )
 
@@ -406,42 +471,73 @@ function(input, output, session) {
     target <- input$target_reduction
 
     max_reduction <- dose_curve_data()$max_reduction
+    total_infections <- dose_curve_data()$total_expected_infections
     cov_cap <- input$coverage_cap
+    max_courses <- max(curve$cum_courses)
 
-    p <- ggplot(curve, aes(x = cum_courses, y = pct_reduction)) +
-      geom_line(color = "#2c7bb6", linewidth = 1.2) +
+    # Compute total population for coverage % axis
+    total_pop <- sum(curve$cum_courses)  # max cumulative = total eligible pop
+    # Use the actual max courses as 100% of eligible pop
+    max_x <- max_courses
+
+    # Scale factor for secondary y-axis (infections averted)
+    max_inf_averted <- max(curve$cum_infections_averted)
+    y_scale <- max_reduction / max_inf_averted
+
+    p <- ggplot(curve, aes(x = cum_courses)) +
+      # Primary line: % incidence reduction
+      geom_line(aes(y = pct_reduction), color = "#2c7bb6", linewidth = 1.2) +
+      # Secondary line: infections averted (rescaled to primary y-axis)
+      geom_line(aes(y = cum_infections_averted * y_scale), color = "#e17055", linewidth = 1, linetype = "solid", alpha = 0.7) +
       # Target line
       geom_hline(yintercept = target, linetype = "dashed", color = "red", linewidth = 0.8) +
-      annotate("text", x = max(curve$cum_courses) * 0.02, y = target + 1.5,
+      annotate("text", x = max_x * 0.02, y = target + max_reduction * 0.03,
                label = paste0("Target: ", target, "%"), color = "red", hjust = 0, size = 4.5) +
       # Max achievable line
       geom_hline(yintercept = max_reduction, linetype = "dotted", color = "grey50", linewidth = 0.6) +
-      annotate("text", x = max(curve$cum_courses) * 0.98, y = max_reduction - 1.5,
+      annotate("text", x = max_x * 0.98, y = max_reduction - max_reduction * 0.04,
                label = paste0("Max achievable: ", round(max_reduction, 1),
-                              "% (", cov_cap, "% coverage cap x ",
-                              input$efficacy * 100, "% efficacy)"),
-               color = "grey40", hjust = 1, size = 4) +
-      labs(
-        title = "Dose-Response Curve: Len Courses vs Incidence Reduction",
-        x = "Cumulative Len Courses",
-        y = "Incidence Reduction (%)",
-        caption = paste0("Total expected infections: ",
-                         format(round(dose_curve_data()$total_expected_infections), big.mark = ","))
+                              "% (", cov_cap, "% cov cap x ",
+                              input$efficacy * 100, "% eff)"),
+               color = "grey40", hjust = 1, size = 3.8) +
+      # Axes
+      scale_x_continuous(
+        name = "Cumulative Len Courses",
+        labels = scales::comma,
+        sec.axis = sec_axis(~ . / max_x * 100, name = "PrEP Coverage (%)",
+                            labels = function(x) paste0(round(x), "%"))
       ) +
-      scale_x_continuous(labels = scales::comma) +
+      scale_y_continuous(
+        name = "Incidence Reduction (%)",
+        sec.axis = sec_axis(~ . / y_scale, name = "Infections Averted",
+                            labels = scales::comma)
+      ) +
+      labs(
+        title = "Volume Finder: Len Courses vs Incidence Reduction",
+        caption = paste0("Total expected infections: ",
+                         format(round(total_infections), big.mark = ","),
+                         "  |  Blue = % reduction, Orange = infections averted")
+      ) +
       theme_minimal(base_size = 14) +
       theme(
         plot.title = element_text(face = "bold", hjust = 0.5),
-        plot.caption = element_text(size = 11, hjust = 0.5)
+        plot.caption = element_text(size = 10, hjust = 0.5, color = "grey50"),
+        axis.title.y.left = element_text(color = "#2c7bb6"),
+        axis.text.y.left = element_text(color = "#2c7bb6"),
+        axis.title.y.right = element_text(color = "#e17055"),
+        axis.text.y.right = element_text(color = "#e17055"),
+        axis.title.x.top = element_text(size = 11)
       )
 
     # Add vertical line at the required courses if achievable
     if (info$achievable) {
       p <- p +
         geom_vline(xintercept = info$courses_needed, linetype = "dashed", color = "darkgreen", linewidth = 0.8) +
-        annotate("text", x = info$courses_needed, y = max(curve$pct_reduction) * 0.5,
+        annotate("text",
+                 x = info$courses_needed + max_x * 0.015,
+                 y = target + max_reduction * 0.03,
                  label = paste0(format(info$courses_needed, big.mark = ","), " courses"),
-                 color = "darkgreen", hjust = -0.1, size = 4.5, angle = 90)
+                 color = "darkgreen", hjust = 0, size = 4)
     }
 
     p
