@@ -1,172 +1,60 @@
-# LenOptim – All-Country Lenacapavir Allocation Model
+# LenOptim -- Lenacapavir PrEP Allocation Optimizer
 
-This repository contains the core R scripts required to run country-level Lenacapavir (long-acting PrEP) allocation and prioritization models.
+An interactive Shiny dashboard for optimizing sub-national allocation of Lenacapavir (long-acting injectable PrEP) across 11 countries in sub-Saharan Africa.
 
-The model estimates infections averted, DALYs averted, number needed to treat (NNT), cost per DALY averted, and cost-effectiveness under different geographic and demographic prioritization strategies.
+Given a fixed supply of Len courses, the model determines which districts, age groups, sex groups, and risk strata should receive allocation to maximize HIV infections averted.
 
-This README is intended for users who wish to run the model for their own country or update assumptions.
-=======
-This document provides descriptions for all major functions used in the LenOptim PrEP allocation pipeline. 
+## Live Dashboard
 
-**Primary R scripts:**
-Within R folder:
-1. NAOMI_config_Allocate_PrEP_allcountry_v3.R - creates incidence_df (the incidence input file from NAOMI data)
-2. Allocate_PrEP_Data_Cleaning_All_Country.R - generates a PrEP allocation strategy using incidence_df and facility_df (facilty name, lat/lon, district, previous PrEP capacity, catchment populations by age and gender)
-3. Run_Allocate_PrEP_All_Country - runs Allocate_PrEP_model
->>>>>>> 28e22c4 (Update core country model scripts and README)
+To run the dashboard locally:
 
----
+```r
+shiny::runApp("R/shiny_app", launch.browser = TRUE)
+```
+
+## Features
+
+- **Allocation Maps** -- Choropleth maps showing districts receiving Len, population coverage, and incidence reduction
+- **Summary Table** -- Infections averted, cost-effectiveness, NNT, PrEP coverage, and targeting ratio
+- **District Detail** -- Sortable, searchable allocation by district/age/sex (downloadable to CSV/Excel)
+- **Volume Finder** -- Interactive dose-response curve: how many Len courses are needed to achieve any target incidence reduction
+- **Scenario Comparison** -- Save multiple model runs and compare side by side
+
+## How the Model Works
+
+1. District-level HIV incidence, prevalence, and population estimates are drawn from the [UNAIDS Naomi model](https://naomi-spectrum.unaids.org/) (2024 estimates).
+2. Within each district, individual-level risk heterogeneity is simulated using a gamma distribution, then stratified into risk quantiles (1, 4, or 8 groups).
+3. All population strata across all districts are ranked by descending incidence.
+4. Len courses are allocated top-down to the highest-risk strata first, until the supply is exhausted or the coverage cap is reached.
 
 ## Repository Structure
 
-All core scripts are located in:
-
 ```
-R/
-```
-
-The key files are:
-
-* **Allocate_PrEP_Data_Cleaning_All_Country.R**
-  Prepares and cleans input datasets used in the model.
-
-* **Allocate_PreP_All_Country_Model.R**
-  Core allocation model. Implements geographic, age, and risk-group prioritization logic.
-
-* **NAOMI_config_Allocate_PrEP_allcountry_v3.R**
-  Configuration file where model parameters and assumptions are defined (costs, DALYs, coverage assumptions, etc.).
-
-* **Run_Allocate_PrEP_All_Country_Model.R**
-  Main execution script. Sources all required files and runs the model workflow.
-
----
-
-## Model Overview
-
-The model:
-
-* Uses district-level HIV incidence estimates
-* Allocates Lenacapavir under constrained budgets
-* Prioritizes by geography, age, and risk strata
-* Estimates:
-
-  * HIV infections averted
-  * DALYs averted
-  * Number needed to treat (NNT)
-  * Cost per DALY averted
-  * Cost-effectiveness thresholds
-
----
-
-## How to Run the Model
-
-### Step 1 – Set Working Directory
-
-Open R or RStudio and set your working directory to the repository root.
-
-Example:
-
-```r
-setwd("path/to/LenOptim")
+R/shiny_app/
+  global.R              # Libraries, constants, data file scanning
+  ui.R                  # Dashboard layout and inputs
+  server.R              # Reactive logic, model execution, rendering
+  model_functions.R     # Core allocation, mapping, and summary functions
+  data_loader.R         # Loads pre-computed country data files
+  data/                 # Pre-computed .RData files (not tracked in git)
+context.md              # Detailed project documentation
 ```
 
----
+## Pre-computed Data
 
-### Step 2 – Update Model Assumptions (Optional)
+The dashboard uses pre-computed `.RData` files containing district-level risk distributions for each country and risk group setting (33 files: 11 countries x 3 risk groups). These files are stored in `R/shiny_app/data/` but are not tracked in git due to their size.
 
-Edit:
+To generate the data files, run `R/generate_all_data.R` with access to the NAOMI source data.
 
-```
-R/NAOMI_config_Allocate_PrEP_allcountry_v3.R
-```
+## Supported Countries
 
-Here you can modify:
+Botswana, Eswatini, Kenya, Lesotho, Malawi, Mozambique, South Africa, Tanzania, Uganda, Zambia, Zimbabwe
 
-* Lenacapavir cost per person per year
-* Budget levels
-* DALYs per HIV infection
-* Treatment cost assumptions
-* Risk group stratification settings
-* Coverage constraints
+## Requirements
 
----
+- R >= 4.5.0
+- Key packages: shiny, dplyr, tidyr, sf, ggplot2, patchwork, viridis, ggrepel, DT, scales, conflicted, purrr, stringr
 
-### Step 3 – Run the Model
+## Reference
 
-Execute:
-
-```r
-source("R/Run_Allocate_PrEP_All_Country_Model.R")
-```
-
-This script:
-
-1. Loads required libraries
-2. Sources configuration and cleaning scripts
-3. Runs the allocation model
-4. Produces summary outputs
-
----
-
-## Required Inputs
-
-Users must provide:
-
-* District-level HIV incidence estimates
-* Population data (age/sex stratified as required)
-* Cost assumptions
-* Risk-group structure (if applicable)
-
-Input formatting must match the structure expected in the data cleaning script.
-
----
-
-## Customizing for a New Country
-
-To run the model for a new country:
-
-1. Prepare incidence and population inputs in the required format.
-2. Update configuration parameters in:
-
-   ```
-   NAOMI_config_Allocate_PrEP_allcountry_v3.R
-   ```
-3. Ensure district identifiers align with input datasets.
-4. Run the model via:
-
-   ```
-   Run_Allocate_PrEP_All_Country_Model.R
-   ```
-
----
-
-## R Version and Packages
-
-Recommended R version: ≥ 4.2
-
-Commonly used packages may include:
-
-* dplyr
-* data.table
-* ggplot2
-* sf
-* scales
-
-Install packages if needed:
-
-```r
-install.packages(c("dplyr","data.table","ggplot2","sf","scales"))
-```
-
----
-
-## Notes on Outputs
-
-Model outputs typically include:
-
-* District-level allocation summaries
-* Impact estimates
-* Cost-effectiveness metrics
-* Coverage summaries
-
-Outputs can be further analyzed or visualized depending on user needs.
+Akullian A, Imai-Eaton JW, Sharma M, Subedar H, O'Brien M, Garnett G. *Health impact and cost-effectiveness of geographically prioritized long-acting PrEP delivery in southern and eastern Africa.* medRxiv 2026. [doi:10.1101/2026.01.01.345396v1](https://www.medrxiv.org/content/10.1101/2026.01.01.345396v1)

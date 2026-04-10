@@ -1,34 +1,10 @@
 # Ignore everything in R by default
 R/*
 
-# Allow specific model data files
-!R/Len_optim_data_KEN_4_risk_groups.RData
-!R/Len_optim_data_KEN_8_risk_groups.RData
-!R/Len_optim_data_ZMB_4_risk_groups.RData
-!R/Len_optim_data_ZMB_8_risk_groups.RData
-!R/Len_optim_data_MWI_4_risk_groups.RData
-!R/Len_optim_data_MWI_8_risk_groups.RData
-!R/Len_optim_data_ZWE_4_risk_groups.RData
-!R/Len_optim_data_ZWE_8_risk_groups.RData
-!R/Len_optim_data_ZAF_4_risk_groups.RData
-!R/Len_optim_data_ZAF_8_risk_groups.RData
-
-# BUT keep these four core scripts
-!R/Allocate_PreP_All_Country_Model.R
-!R/Allocate_PrEP_Data_Cleaning_All_Country.R
-!R/NAOMI_config_Allocate_PrEP_allcountry_v3.R
-!R/Run_Allocate_PrEP_All_Country_Model.R
-
-# Keep the batch data generation script
-!R/generate_all_data.R
-
 # Keep the Shiny app (but not the large data files)
 !R/shiny_app/
 !R/shiny_app/**
 R/shiny_app/data/
 
-# And keep the Manuscript folder + all files in it
-!R/Manuscript/
-!R/Manuscript/*
 .Rproj.user
-
+.Rhistory
