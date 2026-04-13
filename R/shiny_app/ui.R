@@ -70,7 +70,7 @@ fluidPage(
 
       sliderInput(
         "coverage_cap",
-        "Max Coverage of Target Population (%)",
+        "Uptake among those offered Len (%)",
         min = 10,
         max = 100,
         value = 75,
@@ -141,8 +141,7 @@ fluidPage(
                 tags$li("Choose eligible populations by age group and sex."),
                 tags$li("Set within-district risk resolution (1 = district average, 4 or 8 = finer risk targeting). ",
                         "Then use the slider to restrict allocation to only the highest-risk percentiles if desired."),
-                tags$li("Adjust coverage cap to limit the maximum fraction of any target population that receives Len. ",
-                        "This reflects real-world uptake constraints."),
+                tags$li("Set maximum Len uptake, representing the fraction of a given target population who will use Len if offered."),
                 tags$li("Click Run Model to generate results.")
               ),
 
@@ -162,9 +161,7 @@ fluidPage(
               p(style = "font-size: 13px;",
                 "The default parameters (women 15-24, 4 risk quantiles, top 25% risk targeted) reflect PrEP uptake assumptions ",
                 "among women offered PrEP without restriction -- i.e., those most likely to initiate and benefit are in the highest ",
-                "risk quartile within their district."
-              ),
-              p(style = "font-size: 13px;",
+                "risk quartile within their district.",
                 "Within-district risk resolution should be set according to how well Lenacapavir delivery programs can identify ",
                 "and prioritize high-risk groups. If set to 1, the model assumes uptake by the average-risk group, whereas if set to 4, the model ",
                 "can prioritize to smaller groups with higher risk. ",
