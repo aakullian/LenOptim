@@ -4,13 +4,21 @@ An interactive Shiny dashboard for optimizing sub-national allocation of Lenacap
 
 Given a fixed supply of Len courses, the model determines which districts, age groups, sex groups, and risk strata should receive allocation to maximize HIV infections averted.
 
-## Live Dashboard
+## Running Locally
 
-To run the dashboard locally:
+After cloning, from the repo root:
 
-```r
-shiny::runApp("R/shiny_app", launch.browser = TRUE)
+```bash
+Rscript run.R
 ```
+
+The bootstrap script installs any missing R packages from CRAN and launches the dashboard in your browser. Requires R >= 4.2. On Linux, `sf` additionally needs system libraries (GDAL, PROJ, GEOS, UDUNITS) — see the error message the script prints if they're missing.
+
+Alternatively, open `run.R` in RStudio and click **Source**, or run `shiny::runApp("R/shiny_app", launch.browser = TRUE)` directly if dependencies are already installed.
+
+### Getting the data files
+
+The app needs 33 pre-computed `.RData` files (one per country x risk-groups combo, ~592 MB total) in `R/shiny_app/data/`. These are not tracked in git due to their size. Contact the repo maintainer for a copy, or regenerate them with `R/generate_all_data.R` (requires UNAIDS Naomi source data).
 
 ## Features
 
