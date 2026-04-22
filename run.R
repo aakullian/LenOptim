@@ -41,17 +41,41 @@ if (length(missing) > 0) {
 
 app_dir <- "R/shiny_app"
 data_dir <- file.path(app_dir, "data")
-data_files <- list.files(data_dir, pattern = "^Len_optim_data_.*\\.RData$",
-                         full.names = FALSE)
+expected_n_files <- 33
+data_url <- "https://github.com/aakullian/LenOptim/releases/download/data-v1/lenoptim-data-v1.zip"
 
-if (length(data_files) == 0) {
-  stop(
-    "No model data files found in ", data_dir, ".",
-    "\nThe app needs 33 pre-computed `.RData` files (one per country x risk-groups combo).",
-    "\nThese are not tracked in git due to size (~592 MB total).",
-    "\nContact the repo maintainer for a copy, or regenerate them with R/generate_all_data.R",
-    "\n(requires access to the UNAIDS Naomi source data)."
+count_data_files <- function() {
+  length(list.files(data_dir, pattern = "^Len_optim_data_.*\\.RData$"))
+}
+
+if (count_data_files() < expected_n_files) {
+  message(
+    "Data directory is missing files (found ", count_data_files(),
+    " of ", expected_n_files, ").\nDownloading ~592 MB from GitHub release..."
   )
+  dir.create(data_dir, showWarnings = FALSE, recursive = TRUE)
+  zip_path <- tempfile(fileext = ".zip")
+  ok <- tryCatch({
+    old_timeout <- getOption("timeout")
+    options(timeout = 1800)
+    on.exit(options(timeout = old_timeout), add = TRUE)
+    utils::download.file(data_url, zip_path, mode = "wb", quiet = FALSE)
+    utils::unzip(zip_path, exdir = data_dir)
+    TRUE
+  }, error = function(e) {
+    message("Download or extraction failed: ", conditionMessage(e))
+    FALSE
+  })
+  if (file.exists(zip_path)) file.remove(zip_path)
+
+  if (!ok || count_data_files() < expected_n_files) {
+    stop(
+      "Could not obtain the data files automatically.",
+      "\nTry downloading manually from ", data_url,
+      "\nand unzipping into ", normalizePath(data_dir, mustWork = FALSE), "."
+    )
+  }
+  message("Downloaded and extracted ", count_data_files(), " data files.")
 }
 
 message("Starting LenOptim dashboard... (", length(data_files), " data files loaded)")

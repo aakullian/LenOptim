@@ -16,9 +16,9 @@ The bootstrap script installs any missing R packages from CRAN and launches the 
 
 Alternatively, open `run.R` in RStudio and click **Source**, or run `shiny::runApp("R/shiny_app", launch.browser = TRUE)` directly if dependencies are already installed.
 
-### Getting the data files
+### Data files
 
-The app needs 33 pre-computed `.RData` files (one per country x risk-groups combo, ~592 MB total) in `R/shiny_app/data/`. These are not tracked in git due to their size. Contact the repo maintainer for a copy, or regenerate them with `R/generate_all_data.R` (requires UNAIDS Naomi source data).
+The app needs 33 pre-computed `.RData` files (~592 MB total) in `R/shiny_app/data/`. `run.R` will download and extract them automatically from a [GitHub Release](https://github.com/aakullian/LenOptim/releases/tag/data-v1) on first run. To regenerate from scratch, use `R/generate_all_data.R` (requires UNAIDS Naomi source data).
 
 ## Features
 
