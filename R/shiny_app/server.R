@@ -359,30 +359,26 @@ function(input, output, session) {
     country_name <- names(SUPPORTED_COUNTRIES)[SUPPORTED_COUNTRIES == input$country]
     if (length(country_name) == 0) country_name <- input$country
 
-    # Build descriptive label
-    risk_label <- if (as.integer(input$risk_groups) == 1) {
+    risk_group_n <- as.integer(input$risk_groups)
+    risk_targeted <- if (risk_group_n == 1) {
       "district avg"
     } else {
       cutoff <- get_min_risk_quantile() * 100
-      if (cutoff == 0) {
-        paste0(input$risk_groups, " risk groups, all strata")
-      } else {
-        paste0(input$risk_groups, " risk groups, top ", 100 - cutoff, "%")
-      }
+      if (cutoff == 0) "all strata" else paste0("top ", 100 - cutoff, "%")
     }
-    age_label <- paste(input$age_groups, collapse = "/")
-    sex_label <- paste(input$sex, collapse = "/")
+    age_str <- paste(input$age_groups, collapse = "/")
+    male_ages <- if ("male" %in% input$sex) age_str else "--"
+    female_ages <- if ("female" %in% input$sex) age_str else "--"
 
     scenario_row <- results$summary_table %>%
       mutate(
-        label = paste0(
-          country_name, " | ",
-          format(results$summary_table$total_allocated_units, big.mark = ","), " courses | ",
-          risk_label, " | ",
-          age_label, " ", sex_label, " | ",
-          input$coverage_cap, "% cov | ",
-          input$efficacy * 100, "% eff"
-        )
+        country = country_name,
+        risk_groups_n = risk_group_n,
+        risk_targeted = risk_targeted,
+        male_ages = male_ages,
+        female_ages = female_ages,
+        uptake_pct = input$coverage_cap,
+        efficacy_pct = input$efficacy * 100
       )
 
     scenario_log$scenarios <- c(scenario_log$scenarios, list(scenario_row))
@@ -446,20 +442,37 @@ function(input, output, session) {
 
   output$dose_finder_result <- renderUI({
     info <- dose_finder_info()
+    max_reduction <- round(dose_curve_data()$max_reduction, 1)
+    max_courses <- dose_curve_data()$max_courses
+    total_pop <- dose_curve_data()$total_population
+    max_note <- tags$div(
+      style = "margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; color: #2e7d32; font-size: 13px;",
+      tags$p(style = "margin: 0;",
+             tags$strong("Max achievable: "),
+             paste0(max_reduction, "% reduction (",
+                    input$coverage_cap, "% uptake x ",
+                    input$efficacy * 100, "% eff)")),
+      tags$p(style = "margin: 0;",
+             paste0("at ", format(max_courses, big.mark = ","), " courses"))
+    )
     if (!info$achievable) {
       tags$div(
-        style = "color: red;",
-        tags$p(tags$strong(paste0("Target ", input$target_reduction, "% is not achievable."))),
-        tags$p(paste0("Maximum achievable reduction: ", info$max_reduction, "%")),
-        tags$p(paste0("Requiring: ", format(info$max_courses, big.mark = ","), " courses"))
+        tags$div(
+          style = "color: red;",
+          tags$p(tags$strong(paste0("Target ", input$target_reduction, "% is not achievable.")))
+        ),
+        max_note
       )
     } else {
+      prep_cov <- info$courses_needed / total_pop * 100
       tags$div(
         tags$p(tags$strong(paste0("To reduce incidence by ", input$target_reduction, "%:"))),
-        tags$p(paste0("Len courses needed: ", format(info$courses_needed, big.mark = ","))),
+        tags$p(paste0("Len courses needed: ", format(info$courses_needed, big.mark = ","),
+                       " (", sprintf("%.1f", prep_cov), "% PrEP coverage)")),
         tags$p(paste0("Cost: $", format(round(info$cost), big.mark = ","),
                        " (@ $", input$cost_per_course, "/course)")),
-        tags$p(paste0("Infections averted: ", format(info$infections_averted, big.mark = ",")))
+        tags$p(paste0("Infections averted: ", format(info$infections_averted, big.mark = ","))),
+        max_note
       )
     }
   })
@@ -472,12 +485,8 @@ function(input, output, session) {
 
     max_reduction <- dose_curve_data()$max_reduction
     total_infections <- dose_curve_data()$total_expected_infections
-    cov_cap <- input$coverage_cap
+    total_pop <- dose_curve_data()$total_population
     max_courses <- max(curve$cum_courses)
-
-    # Compute total population for coverage % axis
-    total_pop <- sum(curve$cum_courses)  # max cumulative = total eligible pop
-    # Use the actual max courses as 100% of eligible pop
     max_x <- max_courses
 
     # Scale factor for secondary y-axis (infections averted)
@@ -493,19 +502,12 @@ function(input, output, session) {
       geom_hline(yintercept = target, linetype = "dashed", color = "red", linewidth = 0.8) +
       annotate("text", x = max_x * 0.02, y = target + max_reduction * 0.03,
                label = paste0("Target: ", target, "%"), color = "red", hjust = 0, size = 4.5) +
-      # Max achievable line
-      geom_hline(yintercept = max_reduction, linetype = "dotted", color = "grey50", linewidth = 0.6) +
-      annotate("text", x = max_x * 0.98, y = max_reduction - max_reduction * 0.04,
-               label = paste0("Max achievable: ", round(max_reduction, 1),
-                              "% (", cov_cap, "% cov cap x ",
-                              input$efficacy * 100, "% eff)"),
-               color = "grey40", hjust = 1, size = 3.8) +
       # Axes
       scale_x_continuous(
         name = "Cumulative Len Courses",
         labels = scales::comma,
-        sec.axis = sec_axis(~ . / max_x * 100, name = "PrEP Coverage (%)",
-                            labels = function(x) paste0(round(x), "%"))
+        sec.axis = sec_axis(~ . / total_pop * 100, name = "PrEP Coverage (%)",
+                            labels = function(x) paste0(round(x, 1), "%"))
       ) +
       scale_y_continuous(
         name = "Incidence Reduction (%)",
@@ -534,10 +536,10 @@ function(input, output, session) {
       p <- p +
         geom_vline(xintercept = info$courses_needed, linetype = "dashed", color = "darkgreen", linewidth = 0.8) +
         annotate("text",
-                 x = info$courses_needed + max_x * 0.015,
-                 y = target + max_reduction * 0.03,
+                 x = info$courses_needed,
+                 y = max_reduction * 1.03,
                  label = paste0(format(info$courses_needed, big.mark = ","), " courses"),
-                 color = "darkgreen", hjust = 0, size = 4)
+                 color = "darkgreen", hjust = 0.5, vjust = 0, size = 4)
     }
 
     p
@@ -584,7 +586,13 @@ function(input, output, session) {
 
     comparison_df <- bind_rows(scenario_log$scenarios) %>%
       dplyr::select(
-        Label = label,
+        Country = country,
+        `Risk Groups` = risk_groups_n,
+        `Risk Targeted` = risk_targeted,
+        `Male Ages` = male_ages,
+        `Female Ages` = female_ages,
+        `Uptake %` = uptake_pct,
+        `Efficacy %` = efficacy_pct,
         `Units Allocated` = total_allocated_units,
         `Expected Infections` = expected_infections_no_prep,
         `Infections Averted` = infections_averted,
@@ -598,6 +606,8 @@ function(input, output, session) {
         `Targeting Ratio` = incidence_targeting_ratio
       ) %>%
       mutate(
+        `Uptake %` = paste0(`Uptake %`, "%"),
+        `Efficacy %` = paste0(`Efficacy %`, "%"),
         across(c(`Units Allocated`, `Expected Infections`, `Infections Averted`, `DALYs Averted`),
                ~ format(round(.), big.mark = ",")),
         `% Reduction` = paste0(round(`% Reduction`, 1), "%"),
@@ -608,8 +618,24 @@ function(input, output, session) {
         `Targeting Ratio` = round(`Targeting Ratio`, 2)
       )
 
+    header_container <- htmltools::withTags(table(
+      class = "display",
+      thead(
+        tr(
+          th(colspan = 7, "Model Inputs",
+             style = "text-align: center; background-color: #e8f0fe; border-bottom: 2px solid #333;"),
+          th(colspan = 11, "Model Outputs",
+             style = "text-align: center; background-color: #fef3e8; border-bottom: 2px solid #333;")
+        ),
+        tr(
+          lapply(names(comparison_df), th)
+        )
+      )
+    ))
+
     DT::datatable(
       comparison_df,
+      container = header_container,
       options = list(
         pageLength = 10,
         scrollX = TRUE,

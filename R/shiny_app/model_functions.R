@@ -609,6 +609,7 @@ compute_dose_response_curve <- function(facility_df,
   # Total expected infections across all strata
 
   total_expected_infections <- sum(incidence_df$inc_district * incidence_df$pop_subsample / 1000, na.rm = TRUE)
+  total_population <- sum(incidence_df$pop_subsample, na.rm = TRUE)
 
   # Walk down the ranked allocation (already sorted by descending incidence)
   # and compute cumulative courses and infections averted
@@ -627,6 +628,7 @@ compute_dose_response_curve <- function(facility_df,
   return(list(
     curve = curve_df,
     total_expected_infections = total_expected_infections,
+    total_population = total_population,
     max_courses = max(curve_df$cum_courses),
     max_reduction = max(curve_df$pct_reduction)
   ))
