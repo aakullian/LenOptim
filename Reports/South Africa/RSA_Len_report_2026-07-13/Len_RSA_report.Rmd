@@ -1,0 +1,501 @@
+---
+title: "Modeling the impact of Lenacapavir allocation strategies in South Africa"
+author: "Adam Akullian"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: false
+    number_sections: true
+    css: styles.css
+  pdf_document:
+    toc: false
+---
+
+```{r setup, include=FALSE, echo = FALSE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+library(purrr)
+library(here)
+library(kableExtra)
+library(stringr)
+library(purrr)
+library(here)
+library(gt)
+library(tibble)
+library(ggrepel)
+library(patchwork)
+library(scales)
+
+# ---- Speed switch --------------------------------------------------------
+# draft <- TRUE  : FAST text-only knit. Skips the model runs (minutes) AND skips
+#                  re-drawing the scenario maps (the slow sf/ggrepel figures).
+#                  Tables, the scatter (Figure 1) and the volume figure still render.
+# draft <- FALSE : FULL render. Re-runs the models and draws every figure.
+# Use draft <- TRUE while editing prose; flip to FALSE for the final knit.
+draft <- FALSE
+options(len_report_draft = draft)   # stash: survives the rm() inside the sourced scripts
+
+run_models <- !draft   # regenerate output/*.RData only on a full render
+if (run_models) {
+  source("run_ndoh.R",               local = FALSE)
+  source("run_district.R",           local = FALSE)
+  source("run_volume_sensitivity.R", local = FALSE)
+}
+# 00_data_cleaning.R (sourced by the runners) ends with rm(list = setdiff(ls(), ...)),
+# which clears globals defined above, including `draft`. Restore it from the stash.
+draft <- getOption("len_report_draft")
+
+# Scenario .RData files produced by run_ndoh.R and run_district.R live in ./output
+# (knitr sets the working directory to this .Rmd's folder by default).
+output_dir <- "output"
+
+# List all RData files matching a naming pattern
+files <- list.files(output_dir, pattern = "^Len_optim_RSA_output_.*\\.RData$", full.names = TRUE)
+# Drop the NDOH general-population scenario (replaced by the Jamieson comparison);
+# ignores any stale GP output file left over from an earlier run.
+files <- files[!grepl("NDOH_prioritization_GP", files)]
+
+# Optionally extract scenario names from filenames
+scenario_labels <- gsub("\\.RData", "", basename(files))
+
+# Load each RData into a separate environment
+envs <- lapply(files, function(f) {
+  e <- new.env()
+  load(f, envir = e)
+  e
+})
+
+scenario_tables <- map2(envs, scenario_labels, ~{
+  .x$outputs$summary_table %>%
+    mutate(scenario = .y)
+})
+
+scenario_maps <- map2(envs, scenario_labels, ~{
+  .x$outputs$formatted_map
+})
+
+scenario_district_allocation <- map2(envs, scenario_labels, ~{
+  .x$outputs$by_prov_dist_age_sex %>%
+    mutate(scenario = .y)
+})
+
+combined_summary <- bind_rows(scenario_tables)
+
+# ---- Effective incidence our model assigned each population (from the KP run) ----
+kp_idx <- which(str_detect(scenario_labels, "NDOH_prioritization_KP"))[1]
+rdf <- envs[[kp_idx]]$outputs$result_df
+eff_inc <- function(df) {
+  df <- df %>% filter(allocated_units > 0, !is.na(inc_in_sample))
+  if (nrow(df) == 0) return(NA_real_)
+  weighted.mean(df$inc_in_sample, df$allocated_units)
+}
+inc <- c(FSW  = eff_inc(rdf %>% filter(sex == "SW")),
+         MSM  = eff_inc(rdf %>% filter(sex == "GBMSM")),
+         PBFW = eff_inc(rdf %>% filter(sex == "ANC")),
+         AGYW = eff_inc(rdf %>% filter(sex == "female",
+                                       age_group_label %in% c("15-19", "20-24"))))
+
+PY_TOTAL <- 500000; EFFICACY_C <- 0.99
+avert <- function(sh) { sh <- sh[names(inc)]; sh[is.na(sh)] <- 0; sh <- sh / sum(sh)
+                        sum(sh * inc / 1000, na.rm = TRUE) * PY_TOTAL * EFFICACY_C }
+
+# Jamieson (Thembisa) optimum allocation split, applied within our model
+lise_opt_split <- c(FSW = 18, MSM = 26, AGYW = 0, PBFW = 55)
+lise_opt_5yr   <- 20554                      # Thembisa 5-yr infections averted (slide 16)
+jam_inf <- avert(lise_opt_split)
+# Effective incidence reached implied by the impact. NB: do NOT compute this as
+# sum(split * inc): lise_opt_split (FSW,MSM,AGYW,PBFW) and inc (FSW,MSM,PBFW,AGYW)
+# are in different orders, and R multiplies by position (ignoring names), which
+# misaligns PBFW/AGYW. Deriving from jam_inf keeps it consistent with the impact.
+jam_inc <- jam_inf / (PY_TOTAL * EFFICACY_C) * 1000
+pop_inc     <- combined_summary$avg_incidence_population[1]
+exp_inf_num <- combined_summary$expected_infections_no_prep[1]   # expected infections, no PrEP (constant)
+
+# ---- Unified results used by the main table and the scatter ----
+res <- combined_summary %>%
+  filter(str_detect(scenario, "DISTRICT|NDOH_prioritization_KP")) %>%
+  mutate(quant = as.numeric(str_extract(scenario, "(?<=n_)\\d+"))) %>%
+  transmute(
+    scenario, quant,
+    strategy = case_when(
+      str_detect(scenario, "DISTRICT") & quant == 2  ~ "Geographic, lower-risk targeting",
+      str_detect(scenario, "DISTRICT") & quant == 4  ~ "Geographic, universal delivery",
+      str_detect(scenario, "DISTRICT") & quant == 20 ~ "Geographic, high-risk targeting",
+      str_detect(scenario, "DISTRICT")               ~ paste0("Geographic, quant ", quant),
+      TRUE ~ "NDOH key-population allocation"),
+    infections_averted,
+    pct_reduction     = infections_averted / exp_inf_num * 100,
+    incidence_reached = avg_incidence_allocated,
+    targeting_ratio   = incidence_targeting_ratio,
+    districts         = facilities_with_allocation,
+    nnt               = number_needed_to_treat) %>%
+  bind_rows(tibble(
+    scenario = "JAMIESON_optimum", quant = NA_real_,
+    strategy = "Jamieson optimum (our model)",
+    infections_averted = jam_inf, pct_reduction = jam_inf / exp_inf_num * 100,
+    incidence_reached = jam_inc,
+    targeting_ratio = jam_inc / pop_inc, districts = NA_real_,
+    nnt = PY_TOTAL / jam_inf))
+
+# ---- Headline numbers for the narrative (auto-update with the model runs) ----
+.fmt <- function(x) format(round(as.numeric(x)), big.mark = ",")
+.kp  <- combined_summary %>% filter(str_detect(scenario, "NDOH_prioritization_KP"))
+.geo <- combined_summary %>% filter(str_detect(scenario, "DISTRICT"))
+n_kp_avert <- .fmt(.kp$infections_averted[1])
+n_kp_pct   <- round(.kp$percent_reduction_in_incidence[1], 1)
+n_kp_inc   <- round(.kp$avg_incidence_allocated[1], 1)
+n_pop_inc  <- round(pop_inc, 1)
+n_exp_inf  <- .fmt(.kp$expected_infections_no_prep[1])
+n_cov      <- round(.kp$prep_coverage[1], 1)
+n_units    <- .fmt(.kp$total_allocated_units[1])
+n_jam      <- .fmt(jam_inf)
+n_geo_min  <- .fmt(min(.geo$infections_averted))
+n_geo_max  <- .fmt(max(.geo$infections_averted))
+n_geo_min_pct <- round(min(.geo$percent_reduction_in_incidence), 1)
+n_geo_max_pct <- round(max(.geo$percent_reduction_in_incidence), 1)
+n_jam_pct     <- round(jam_inf / exp_inf_num * 100, 1)
+n_geo_gain <- round(100 * (max(.geo$infections_averted) / .kp$infections_averted[1] - 1))
+n_dist_min <- min(.geo$facilities_with_allocation)
+n_dist_max <- max(.geo$facilities_with_allocation)
+
+# Helper: render a scenario map with an outer black box (title supplied as markdown text)
+box_map <- function(p) {
+  (p + plot_annotation(theme = theme(
+        plot.background = element_rect(colour = "black", fill = NA, linewidth = 1.5),
+        plot.margin = margin(10, 10, 10, 10)))) &
+    theme(plot.title   = element_text(size = 18),
+          legend.text  = element_text(size = 15),
+          legend.title = element_text(size = 15))
+}
+
+combined_summary_table <- combined_summary %>%
+  select(-c(budget, cost_per_unit, total_cost))  %>%
+  select(scenario, allocation_by_age_sex, everything())  %>%
+  mutate(
+    `target population` = str_extract(scenario, "(?<=__)[A-Z]*F\\d{2}-\\d{2}"),
+    `number of gen pop risk groups` = as.numeric(str_extract(scenario, "(?<=n_)\\d+"))
+  ) %>%
+  rename(
+    `scenario_id` = scenario,
+    #`Budget (USD)` = budget,
+    #`Cost per Unit` = cost_per_unit,
+    #`Coverage Multiplier` = coverage_mult,
+    `Total Units Allocated` = total_allocated_units,
+    `Expected Infections (No PrEP)` = expected_infections_no_prep,
+    `Infections Averted` = infections_averted,
+    `Incidence Reduction (%)` = percent_reduction_in_incidence,
+    `PrEP Coverage (%)` = prep_coverage,
+    `Total DALYs Averted` = total_dalys_averted,
+    #`Total Cost (USD)` = total_cost,
+    `Cost per Infection Averted` = cost_per_infection_averted,
+    `Cost per DALY Averted` = cost_per_daly_averted,
+    `Number Needed to Treat (NNT)` = number_needed_to_treat,
+    `Districts Allocated` = facilities_with_allocation,
+    `Avg Incidence (Allocated)` = avg_incidence_allocated,
+    `Avg Incidence (Population)` = avg_incidence_population,
+    `Targeting Ratio` = incidence_targeting_ratio
+    #`Allocation by Age/Sex/KP` = allocation_by_age_sex
+  )  %>%
+  mutate(
+    # Strategy description
+    scenario_description = case_when(
+      str_detect(scenario_id, "NDOH_prioritization_GP") ~ "NDoH Prioritization Strategy, General Population",
+      str_detect(scenario_id, "NDOH_prioritization_KP") ~ "NDoH Prioritization Strategy, Key Populations + General Population",
+      str_detect(scenario_id, "DISTRICT") ~ "District Prioritization Strategy, General Population",
+      TRUE ~ "Uncategorized Strategy"
+    )
+  ) %>%
+  relocate(scenario_description, `target population`, `number of gen pop risk groups`, .after = scenario_id) %>%
+  select(-scenario_id) %>%
+  mutate(
+    `Expected Infections (No PrEP)` = formatC(`Expected Infections (No PrEP)`, format = "f", digits = 0),
+    `Infections Averted` = formatC(`Infections Averted`, format = "f", digits = 0),
+    `Incidence Reduction (%)` = formatC(`Incidence Reduction (%)`, format = "f", digits = 1),
+    `PrEP Coverage (%)` = formatC(`PrEP Coverage (%)`, format = "f", digits = 1),
+    `Total DALYs Averted` = formatC(`Total DALYs Averted`, format = "f", digits = 0),
+    `Cost per Infection Averted` = paste0("$", formatC(`Cost per Infection Averted`, format = "f", digits = 0, big.mark = ",")),
+    `Cost per DALY Averted` = paste0("$", formatC(`Cost per DALY Averted`, format = "f", digits = 0, big.mark = ",")),
+    `Number Needed to Treat (NNT)` = formatC(`Number Needed to Treat (NNT)`, format = "f", digits = 0),
+    `Avg Incidence (Allocated)` = formatC(`Avg Incidence (Allocated)`, format = "f", digits = 1),
+    `Avg Incidence (Population)` = formatC(`Avg Incidence (Population)`, format = "f", digits = 1),
+    `Targeting Ratio` = formatC(`Targeting Ratio`, format = "f", digits = 1)
+  ) %>%
+  mutate(
+    `target population` = case_when(
+      scenario_description == "NDoH Prioritization Strategy, General Population" ~ "MF15-49",
+      scenario_description == "NDoH Prioritization Strategy, Key Populations + General Population" ~ "MF15-49 + KPs",
+      TRUE ~ `target population`  # keep existing values
+    )
+  ) %>%
+  arrange(`number of gen pop risk groups`)
+
+combined_summary_district <- bind_rows(scenario_district_allocation) 
+
+# 1. Keep all non-numeric columns + numeric columns that are not all zeros
+non_zero_cols <- names(combined_summary_district)[map_lgl(combined_summary_district, ~ !is.numeric(.x) || !all(.x %in% c(0, NA)))]
+
+combined_summary_district = combined_summary_district  %>%
+
+  select(all_of(non_zero_cols)) %>%
+
+  # 2. Rename KP columns (and their percent versions)
+  rename_with(~ str_replace_all(.x, c(
+    "anc_15-49" = "Antenatal care",
+    "gbmsm_15-49" = "Men who have sex with men",
+    "sw_15-49" = "Female sex workers",
+    "tgw_15-49" = "Transgender women",
+    "anc_15-49_pct" = "Antenatal care pct",
+    "gbmsm_15-49_pct" = "Men who have sex with men pct",
+    "sw_15-49_pct" = "Female sex workers pct",
+    "tgw_15-49_pct" = "Transgender women pct"
+  ))) %>%
+
+  # 3. Remove underscores from all column names
+  rename_with(~ gsub("_", " ", .x)) %>%
+
+  # 4. Move `scenario` column to the front
+  relocate(scenario) %>%
+
+  # 5. Reorder: each percent column comes right after its count column
+  {
+    cols <- names(.)
+    pct_cols <- cols[grepl(" pct$", cols)]
+    base_cols <- cols[!cols %in% pct_cols & cols != "scenario"]
+    ordered_cols <- c("scenario")
+
+    for (base in base_cols) {
+      ordered_cols <- c(ordered_cols, base)
+      pct_match <- paste0(base, " pct")
+      if (pct_match %in% pct_cols) {
+        ordered_cols <- c(ordered_cols, pct_match)
+      }
+    }
+
+    select(., all_of(ordered_cols))
+  } %>%
+
+  # 6. Add (count) and (percent) labels to numeric columns
+  rename_with(~ if_else(
+    str_detect(.x, " pct$"),
+    paste0(str_remove(.x, " pct$"), " (percent)"),
+    paste0(.x, " (count)")
+  ),
+  .cols = where(is.numeric))
+
+
+
+```
+
+# Summary {-}
+
+We modelled how to allocate a fixed 500,000 person-year supply of Lenacapavir in South Africa, comparing the National Department of Health (NDOH) key-population strategy against geographic prioritisation of the general population by district-level HIV incidence, and benchmarking both against the key-population optimum of Jamieson et al. Because a fixed volume of Lenacapavir averts infections in proportion to the average incidence of those reached, strategies that concentrate delivery on higher-incidence individuals avert the most infections. Geographic prioritisation of the general population averted between `r n_geo_min` (`r n_geo_min_pct`%) and `r n_geo_max` (`r n_geo_max_pct`%) infections over one year, more than the `r n_kp_avert` (`r n_kp_pct`%) averted by the NDOH plan as proposed and comparable to an optimally targeted key-population allocation. Delivered universally within the highest-incidence districts, this approach reaches those at greatest risk, particularly young women, while avoiding the operational and social costs of individual risk screening, and offers a simple and transparent basis for prioritising Lenacapavir where it will have the greatest impact.
+
+# Background
+
+The South African National Department of Health (NDOH) is developing a Lenacapavir allocation plan, prioritized to high-risk populations and districts. We quantified the impact and cost-effectiveness of several risk prioritization strategies, comparing allocation based on key population (KP) status to allocation based on district-level incidence. We also compared our results to the optimized KP allocation identified by Jamieson et al. 2025 using the Thembisa transmission model.
+
+# Methods
+
+## Inputs and assumptions
+
+We developed a district-level PrEP allocation model for South Africa to simulate the impact of different distribution scenarios for long-acting injectable PrEP (Lenacapavir). We use district-level incidence, prevalence, and population data from the UNAIDS Naomi model, a geo-statistical model based on population-level surveys, as the primary inputs into the allocation models (https://naomi-spectrum.unaids.org/). 
+
+To reflect risk heterogeneity within demographic subgroups, individual-level incidence within each district, age, and sex subgroup is drawn from a gamma distribution with a shape parameter of 1 (an exponential distribution) and a mean equal to the subgroup's Naomi incidence; individuals are then stratified into risk quantiles. Incidence rates for key populations were estimated from data where available, and from calibrated HIV transmission models where not available. A total of 500,000 person-years of Lenacapavir (an overall coverage of `r n_cov`% among HIV negative adults 15+ years of age) were allocated across all scenarios, and Lenacapavir efficacy was assumed to be 99%, matching the PURPOSE-trial estimate used by Jamieson et al. 2025.
+
+Impact metrics (infections averted and % reduction in incidence), cost-effectiveness metrics (cost per DALY averted, cost per infection averted), and delivery-efficiency metrics (number needed to treat, incidence in those allocated Lenacapavir) were estimated for each scenario. Analyses were conducted in R using custom functions for allocation, impact estimation, and visualization.
+
+## Scenarios considered
+
+We explored two allocation scenarios and compared both to an external dynamic-model benchmark:
+
+1. NDOH key-population model: Lenacapavir is allocated to pre-specified key populations (female sex workers, pregnant and breastfeeding women, gay and bisexual men who have sex with men, and transgender women) and to general-population high-risk individuals, within the 25 districts identified by the NDOH. General-population allocation is distributed by the size of the population at risk by age (15-19, 20-24, 25-34, 35-49) and sex, with women prioritized 2:1 over men.
+
+2. District-prioritization model: Lenacapavir is allocated to the general population across all districts by descending age- and sex-stratified district-level incidence, under three assumptions about how strongly uptake concentrates on the highest-risk individuals within each district:
+
+    - Lower-risk targeting: uptake is spread broadly across the within-district risk distribution, so that those reached have incidence only modestly above the district average.
+    - Universal delivery: the default assumption, in which uptake is moderately concentrated on higher-risk individuals.
+    - High-risk targeting: uptake is strongly concentrated on the highest-incidence individuals, so that those reached have incidence well above the district average.
+
+For comparison, we also reproduce within our framework the optimised key-population allocation identified by Jamieson et al. using the Thembisa transmission model.
+
+# Results
+
+A comparison of impact, cost-effectiveness, and delivery-efficiency metrics across the scenarios modelled are shown in Table 1 and Figure 1. The proposed NDOH strategy with KP prioritization would avert `r n_kp_avert` infections (`r n_kp_pct`%) in adults 15-49 over one year, relative to the `r n_exp_inf` infections expected in the absence of Lenacapavir, reaching a population with an incidence of `r n_kp_inc` per 1000 person-years against a country-level adult incidence of `r n_pop_inc` per 1000. Applying the optimized key-population allocation identified by Jamieson et al. 2025 within our framework would avert `r n_jam` (`r n_jam_pct`%) infections. Prioritizing allocation by district-level incidence would avert between `r n_geo_min` (`r n_geo_min_pct`%) and `r n_geo_max` (`r n_geo_max_pct`%) infections, depending on the extent of higher-risk uptake, up to `r n_geo_gain`% more than the NDOH KP plan, while reaching between `r n_dist_min` and `r n_dist_max` districts. Because a fixed volume of Lenacapavir averts infections in proportion to the average incidence of those reached, all strategies fall along a single rising relationship (Figure 1): impact is determined by how effectively each concentrates delivery on higher-incidence individuals, whether by geography or by key-population membership, rather than by the targeting axis itself.
+
+```{r main-results-table, results = "asis", echo = FALSE}
+res %>%
+  arrange(infections_averted) %>%
+  transmute(
+    Strategy = strategy,
+    `Infections averted (1-yr)` = round(infections_averted),
+    `Reduction in incidence (%)` = round(pct_reduction, 1),
+    `Incidence reached (/1000)` = round(incidence_reached, 1),
+    `Targeting ratio` = round(targeting_ratio, 1),
+    `Districts reached` = ifelse(is.na(districts), "n/a", as.character(round(districts))),
+    `NNT (PY per infection)` = round(nnt)
+  ) %>%
+  kable(format = "html", escape = FALSE) %>%
+  kable_styling(full_width = TRUE, bootstrap_options = c("striped", "hover"))
+```
+
+**Table 1.** Infections averted, reduction in incidence, and delivery efficiency by allocation strategy (500,000 person-years, 99% efficacy).
+
+```{r geog-vs-kp, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 9, fig.height = 6.5}
+geo <- res %>% filter(str_detect(strategy, "Geographic")) %>% arrange(incidence_reached)
+
+plot_df <- res %>%
+  transmute(strategy, incidence_reached, infections_averted,
+            metric = "Our model (1-yr, primary)") %>%
+  bind_rows(tibble(
+    strategy = "Jamieson optimum (Thembisa)",
+    incidence_reached = jam_inc,
+    infections_averted = lise_opt_5yr,
+    metric = "Thembisa (5-yr, incl. secondary)"))
+
+ggplot(plot_df, aes(incidence_reached, infections_averted)) +
+  geom_line(data = geo, aes(group = 1), colour = "grey60", linetype = "dashed") +
+  geom_point(aes(colour = metric, shape = metric), size = 3.5) +
+  geom_text_repel(aes(label = strategy), size = 3.2, colour = "grey20",
+                  min.segment.length = 0, box.padding = 0.9, seed = 1) +
+  scale_x_continuous("Average HIV incidence of those reached (per 1,000 person-years)",
+                     breaks = seq(20, 40, 5),
+                     expand = expansion(mult = c(0.08, 0.12))) +
+  scale_y_continuous(
+    "HIV infections averted", labels = scales::comma, limits = c(0, NA),
+    sec.axis = sec_axis(~ . / exp_inf_num * 100, name = "Reduction in HIV incidence (%)")) +
+  scale_colour_manual(values = c("Our model (1-yr, primary)" = "#1F6FB4",
+                                 "Thembisa (5-yr, incl. secondary)" = "#C2410C")) +
+  labs(colour = NULL, shape = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "bottom",
+        axis.line = element_line(colour = "grey30"),
+        panel.grid.minor = element_blank())
+```
+
+**Figure 1.** Infections averted versus average HIV incidence of those reached. Our-model points are one-year primary infections averted (right axis: reduction in one-year incidence); the Thembisa point is five-year infections averted including onward transmission, shown for the same allocation.
+
+The impact of a geographic strategy is highly concentrated within the highest-incidence districts. Figure 2 maps the default universal-delivery scenario (where the top 25th percentile of the risk distribution is prioiritized for Lenacapavir provision), showing, by district, where Lenacapavir is allocated, the resulting coverage, and the reduction in incidence achieved; in the highest-incidence districts this strategy averts close to 30% of new infections. The number of districts reached depends on how strongly uptake is assumed to concentrate on higher-risk individuals: under broader-based demographic targeting, Lenacapavir is concentrated in a smaller number of the highest-incidence districts (`r n_dist_min`), whereas under high-risk targeting it is spread across many more districts (`r n_dist_max`) to reach high-risk individuals within lower-incidence districts (see Appendix).
+
+```{r fig2-universal, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 20, fig.height = 7}
+if (!draft) {
+  q4_idx <- which(grepl("DISTRICT", scenario_labels) &
+                  str_extract(scenario_labels, "(?<=n_)\\d+") == "4")[1]
+  if (!is.na(q4_idx)) print(box_map(scenario_maps[[q4_idx]]))
+}
+```
+
+**Figure 2.** District-optimized, universal-delivery scenario. By district: whether Lenacapavir was allocated, the resulting Lenacapavir coverage among HIV-negative adults aged 15 and older, and the reduction in incidence achieved (up to nearly 30% in the highest-incidence districts).
+
+The results above concern the fixed 500,000 person-year Global Fund donation. As Lenacapavir volume scales toward the levels in Jamieson et al's large-scale roll-out scenario (Phase 2, on the order of 1.5 to 3 million person-years annually), our model shows the expected saturation of high-incidence targets: because allocation proceeds from the highest-incidence districts and strata downward, each additional person-year reaches progressively lower-incidence individuals, so the average incidence of those reached, and hence the marginal impact per person-year, declines (Figure 3). Total infections averted continue to rise, but with diminishing returns. Our static model does not capture the continuation-duration and secondary-transmission dynamics that drive Jamieson et al.'s 20-year Phase 2 results, so these curves describe the geographic-targeting efficiency of a given annual volume rather than a multi-year projection.
+
+```{r fig3-volume, echo = FALSE, warning = FALSE, message = FALSE, fig.width = 11, fig.height = 4.5}
+if (file.exists("output/volume_sensitivity.RData")) {
+  load("output/volume_sensitivity.RData")
+  vs <- volume_sensitivity
+  pA <- ggplot(vs, aes(py_allocated / 1e6, infections_averted)) +
+    geom_line(colour = "#1F6FB4") + geom_point(colour = "#1F6FB4", size = 2.5) +
+    geom_vline(xintercept = 0.5, linetype = "dashed", colour = "grey55") +
+    annotate("text", x = 0.5, y = min(vs$infections_averted),
+             label = "500k donation", hjust = -0.05, vjust = 0, size = 3, colour = "grey40") +
+    # Jamieson et al. dynamic-model estimates (average annual infections averted,
+    # incl. onward transmission): Phase 1 = 500k PY over 5 yr; Phase 2 large-scale
+    # roll-out = conservative ~1.7M PY / 26,900 and optimistic ~2.9M PY / 44,200 (20 yr).
+    annotate("rect", xmin = 1.7, xmax = 2.9, ymin = 26900, ymax = 44200,
+             fill = "#C2410C", alpha = 0.12) +
+    annotate("point", x = c(0.5, 1.7, 2.9), y = c(lise_opt_5yr, 26900, 44200),
+             colour = "#C2410C", size = 3, shape = 17) +
+    annotate("text", x = 0.62, y = lise_opt_5yr, label = "Jamieson Phase 1 (5-yr)",
+             colour = "#C2410C", size = 3, hjust = 0, vjust = 0.5) +
+    annotate("text", x = 2.3, y = 44200, label = "Jamieson Phase 2\n(20-yr dynamic)",
+             colour = "#C2410C", size = 3, hjust = 0.5, vjust = -0.4) +
+    scale_x_continuous("Lenacapavir person-years (millions)") +
+    scale_y_continuous("Infections averted (1-yr)", labels = scales::comma,
+                       expand = expansion(mult = c(0.05, 0.15))) +
+    labs(title = "a. Total impact (diminishing returns)") +
+    theme_minimal(base_size = 12) +
+    theme(axis.line = element_line(colour = "grey30"), panel.grid.minor = element_blank())
+  pB <- ggplot(vs, aes(py_allocated / 1e6, avg_incidence)) +
+    geom_line(colour = "#C2410C") + geom_point(colour = "#C2410C", size = 2.5) +
+    geom_vline(xintercept = 0.5, linetype = "dashed", colour = "grey55") +
+    scale_x_continuous("Lenacapavir person-years (millions)") +
+    scale_y_continuous("Avg incidence of those reached (/1,000 py)", limits = c(0, NA)) +
+    labs(title = "b. Targeting efficiency (declines as volume grows)") +
+    theme_minimal(base_size = 12) +
+    theme(axis.line = element_line(colour = "grey30"), panel.grid.minor = element_blank())
+  print(pA | pB)
+}
+```
+
+**Figure 3.** Volume sensitivity of impact and targeting efficiency under the universal-delivery scenario. (a) Total one-year infections averted and (b) average incidence of those reached, as the total Lenacapavir volume increases; the dashed line marks the 500,000 person-year Global Fund donation. Orange markers in (a) show Jamieson et al.'s dynamic-model estimates (average annual infections averted, including onward transmission): the Phase 1 point at the 500,000 person-year donation (five-year horizon) and the Phase 2 large-scale roll-out band at conservative (~1.7 million) and optimistic (~2.9 million) annual volumes (20-year horizon). Because these are multi-year dynamic estimates they are not directly comparable to our one-year direct estimates and are shown for context.
+
+# Discussion
+
+Our results show that geographically prioritized delivery of Lenacapavir to the general population, guided by district-level HIV incidence, can match or exceed the impact and efficiency of key-population targeting. Applied to the same 500,000 person-year Global Fund donation, geographic prioritization of the highest-incidence districts averted between `r n_geo_min` (`r n_geo_min_pct`%) and `r n_geo_max` (`r n_geo_max_pct`%) infections over one year, more than the `r n_kp_avert` (`r n_kp_pct`%) infections averted by the NDOH plan as proposed, which blends key populations with broad general-population delivery. This advantage arises because the NDOH plan's general-population component is not itself geographically concentrated; as shown below, an optimally targeted key-population allocation reaches a comparably high-incidence population to geographic universal delivery. In our model both routes operate through the same mechanism, concentrating Lenacapavir on higher-incidence individuals whether they are identified by where they live or by membership in a key population. Because HIV incidence in South Africa peaks among young women aged 15 to 24, geographically prioritized general-population delivery naturally concentrates Lenacapavir in this group without requiring explicit key-population targeting.
+
+A geographic approach that offers Lenacapavir universally within high-incidence districts and demographic groups overcomes several limitations of strategies that rely on individual risk screening or narrow key-population targeting. Validated HIV risk-prediction scores have shown mixed performance and often miss many of those who go on to acquire HIV, particularly young women. Risk screening also adds personnel time, cost, and complexity to delivery, and can stigmatize those identified as high-risk, potentially lowering uptake among those who would benefit most. A universal offer instead allows individuals to decide whether and when to take PrEP based on their own risk perception, which reduces stigma, instils agency and trust, and may streamline implementation; empirically, those who self-select for PrEP under a universal offer tend to have substantially higher HIV risk than the general population. Narrowly reaching key populations can be impactful but operationally difficult, particularly given the recent contraction of key-population-focused services in South Africa, and pregnant and breastfeeding women reached through antenatal care may have limited scope for the risk-differentiated uptake on which key-population impact depends.
+
+We compared our results directly to those of Jamieson et al., who used a dynamic transmission model to optimise the same 500,000 person-year donation across key and general populations. Applying their key-population optimum (55% to pregnant and breastfeeding women, 26% to MSM, and 18% to female sex workers) within our framework, we estimated `r n_jam` (`r n_jam_pct`%) infections averted over one year, reaching an average incidence close to that of the universal-delivery geographic scenario; their model estimated `r .fmt(lise_opt_5yr)` infections averted over five years (Figure 1). This comparison is not like-for-like: their dynamic model captures onward transmission over a multi-year horizon, whereas we estimate only the direct, one-year impact among those taking Lenacapavir and do not model secondary transmission, so our estimates are conservative and are expected to fall below theirs for the same allocation. The gap may also reflect differences between the two models in the HIV incidence of the key populations reached; incidence is derived endogenously in Thembisa, whereas we apply fixed multipliers to district-level incidence, so the two need not assign the same risk to female sex workers, MSM, and pregnant and breastfeeding women. More broadly, our projections are consistent with country-level dynamic models for South Africa, which estimate a 21 to 22% reduction in incidence at 3 to 5% coverage when prioritizing high-risk groups and key populations; geographically prioritized general-population delivery reaches comparable efficiency by concentrating Lenacapavir in the highest-incidence districts and age groups. Because our model does not explicitly represent key populations, instead assuming a continuous distribution of risk within districts, our finding that geographically prioritized general-population delivery is impactful and efficient should be read as complementary to, not contradictory with, approaches that prioritise discrete key populations.
+
+As delivery expands beyond the highest-incidence districts, efficiency diminishes, reflecting a trade-off between maximizing population coverage and maintaining cost-effectiveness (Figure 3). This same relationship implies that, as HIV incidence continues to decline, the set of districts in which geographically prioritized Lenacapavir is most efficient would be expected to narrow.
+
+# Conclusion
+
+Allocation based on district-level incidence would avert up to `r n_geo_gain`% more infections than the planned allocation of Lenacapavir to key populations in 25 districts, while reaching a comparably high-incidence population to an optimally targeted key-population allocation. The benefits of a geographic approach should be weighed against the implementation challenges of delivering Lenacapavir to key populations in currently selected districts; both approaches ultimately depend on reaching the highest-incidence individuals.
+
+# Appendix
+
+## Full set of scenario maps
+
+The maps below show all modelled strategies (the universal-delivery district scenario appears as Figure 2 above).
+
+```{r scenario-map-loop, echo = FALSE, warning = FALSE, message = FALSE, results = "asis", fig.width = 20, fig.height = 7}
+
+# Order: district scenarios (ascending risk-targeting), then NDOH KP
+map_order <- order(
+  !grepl("DISTRICT", scenario_labels),
+  suppressWarnings(as.numeric(str_extract(scenario_labels, "(?<=n_)\\d+")))
+)
+
+# Summary title for each scenario figure (rendered as markdown, outside the map box)
+scen_title <- function(lab) {
+  q <- suppressWarnings(as.numeric(str_extract(lab, "(?<=n_)\\d+")))
+  if (grepl("DISTRICT", lab)) {
+    desc <- dplyr::case_when(q == 2  ~ "lower-risk targeting",
+                             q == 4  ~ "universal delivery",
+                             q == 20 ~ "high-risk targeting",
+                             TRUE    ~ paste0("quant ", q))
+    paste0("District-optimised, ", desc)
+  } else if (grepl("NDOH_prioritization_KP", lab)) {
+    "NDOH key-population allocation"
+  } else lab
+}
+
+if (!draft) {
+  for (k in seq_along(map_order)) {
+    i <- map_order[k]
+    print(box_map(scenario_maps[[i]]))
+    cat("\n\n**", letters[k], ".** ", scen_title(scenario_labels[i]), "\n\n", sep = "")
+  }
+}
+
+```
+
+## Full scenario comparison table
+
+Across all scenarios, approximately `r n_units` person-years of Lenacapavir were allocated, against `r n_exp_inf` HIV infections expected over one year in the absence of Lenacapavir. This corresponds to an overall PrEP coverage of `r n_cov`% of HIV-negative adults aged 15+, and the country-level (population-average) HIV incidence was `r n_pop_inc` per 1000 person-years. These quantities are common to all scenarios and are omitted from the table below.
+
+```{r appendix-table, results = "asis", echo = FALSE}
+combined_summary_table %>%
+  select(-any_of(c("Total Units Allocated", "Expected Infections (No PrEP)",
+                   "PrEP Coverage (%)", "Avg Incidence (Population)"))) %>%
+  kable(format = "html", escape = FALSE) %>%
+  column_spec(2, width = "30em", extra_css = "word-wrap: break-word; white-space: normal;") %>%
+  kable_styling(full_width = TRUE, bootstrap_options = c("striped", "hover"))
+```
+
+**Table S1.** Full scenario comparison, including cost-effectiveness and allocation-by-population detail for every modelled strategy.
+

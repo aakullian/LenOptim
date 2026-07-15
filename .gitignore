@@ -6,6 +6,23 @@ R/*
 !R/shiny_app/**
 R/shiny_app/data/
 
+# Keep the model pipeline scripts
+!R/pipeline/
+!R/pipeline/**
+
 .Rproj.user
 .Rhistory
 lenoptim-data-*.zip
+
+# Editor / assistant config
+.claude/
+
+# Large or licensed source data (not for GitHub)
+NAOMI/
+LenOptim_FirstVersion/
+
+# Report folders: keep code + rendered HTML only; exclude working data and
+# generated model outputs (large, and some inputs are sensitive/licensed).
+Reports/**/data/
+Reports/**/output/
+Reports/**/*_files/
